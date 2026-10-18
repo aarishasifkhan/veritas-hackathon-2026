@@ -1,0 +1,1 @@
+# veritas-hackathon-2026
