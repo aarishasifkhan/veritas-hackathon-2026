@@ -39,13 +39,14 @@ BRAIN_IMAGE = HERE / "assets" / "brain.png"
 CLASSES = ["Normal", "Bleeding", "Ischemia"]
 SHOW_ORDER = [1, 2, 0]                    # show Bleeding first, then Ischemia, then Normal
 
+torch.set_num_threads(2)   # shared hosts report many CPU cores but give you ~2; using them all slows PyTorch down
+
 st.set_page_config(page_title="BleedCheck CT", layout="wide", initial_sidebar_state="collapsed")
 
 # ------------------------------------------------------------------ look and feel
 # Cream paper, steel blue, neon pink and yellow accents, and red.
 # Red means one thing: "possible bleed".
 CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap');
 :root { --paper:#FFFFF0; --steel:#4A7B9D; --ink:#1F3F57; --alert:#CC0000; }
 html, body, [data-testid="stAppViewContainer"], .stApp { background: var(--paper); color: var(--ink); }
 .stApp { font-family: 'Atkinson Hyperlegible', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 1.0625rem; line-height: 1.6; }
@@ -128,105 +129,55 @@ html, body, [data-testid="stAppViewContainer"], .stApp { background: var(--paper
   .bc-row { grid-template-columns: 5.2rem 1fr 3.4rem; gap: 8px; }
   .results { font-size: .9rem; } .results th, .results td { padding: 9px 8px; }
 }
-@media (prefers-reduced-motion: reduce) { .stApp * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
-
 /* ================= NEON YELLOW + PINK, ONLY IN A FEW PLACES ================= */
 :root { --pink:#FF2E9A; --yellow:#F5FF1F; }
-@property --a { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
-
-@keyframes slide   { from { background-position: 0% 50%; } to { background-position: 200% 50%; } }
-@keyframes turn    { to { --a: 360deg; } }
-/* The glow travels down the page: each gradient strip lights up in turn (9s cycle) */
-@keyframes lightUp {
-  0%, 22%, 100% { box-shadow: 0 0 0 0 rgba(255,46,154,0); }
-  8%, 14% { box-shadow: 0 0 10px 2px rgba(255,46,154,.85), 0 0 22px 5px rgba(245,255,31,.6); }
-}
-@keyframes lightUpBox {
-  0%, 22%, 100% { box-shadow: 0 0 0 0 rgba(255,46,154,0); }
-  8%, 14% { box-shadow: 0 0 16px 3px rgba(255,46,154,.7), 0 0 34px 8px rgba(245,255,31,.45); }
-}
-
-/* --- Brain: pink aura, gradient ring that turns, ticks in pink and yellow --- */
+/* --- Brain: pink aura, gradient ring --- */
 .gantry:not(.flag) {
   border-color: transparent;
   background:
     radial-gradient(circle, rgba(255,46,154,.20) 0%, rgba(255,46,154,.08) 55%, transparent 72%) padding-box,
     linear-gradient(var(--paper), var(--paper)) padding-box,
-    conic-gradient(from var(--a), var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)) border-box;
+    conic-gradient(var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)) border-box;
   box-shadow: 0 0 22px 3px rgba(255,46,154,.45), 0 0 46px 8px rgba(245,255,31,.25);
-  animation: turn 9s linear infinite;
 }
 .gantry.flag { box-shadow: 0 0 18px 3px rgba(204,0,0,.45); }
 .brain-art { filter: drop-shadow(0 0 10px rgba(255,46,154,.65)); }
 
-/* --- Top bar: gradient line that slides --- */
+/* --- Top bar: gradient line --- */
 .topbar { position: relative; border-bottom: none; }
 .topbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; border-radius: 2px;
-  background: linear-gradient(90deg, var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)); background-size: 200% 100%;
-  animation: slide 5s linear infinite, lightUp 9s ease-in-out infinite 0s; }
+  background: linear-gradient(90deg, var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)); background-size: 200% 100%; }
 
 /* --- Title bar: gradient strip beside the intro --- */
 .hero { position: relative; border-left: none; padding-left: 26px; }
 .hero::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; border-radius: 3px;
-  background: linear-gradient(180deg, var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)); background-size: 100% 200%;
-  animation: slideV 5s linear infinite, lightUp 9s ease-in-out infinite 1.5s; }
-@keyframes slideV { from { background-position: 50% 0%; } to { background-position: 50% 200%; } }
-
+  background: linear-gradient(180deg, var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)); background-size: 100% 200%; }
 /* --- Heading underlines --- */
 .stApp h2.bc-h2::after { content: ""; display: block; width: 3.6rem; height: 4px; margin-top: 7px; border-radius: 2px;
-  background: linear-gradient(90deg, var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)); background-size: 200% 100%;
-  animation: slide 5s linear infinite, lightUp 9s ease-in-out infinite 3s; }
+  background: linear-gradient(90deg, var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)); background-size: 200% 100%; }
 
-/* --- Limits box: moving gradient border, gradient title --- */
+/* --- Limits box: gradient border, gradient title --- */
 .limits { border: 3px solid transparent;
   background: linear-gradient(var(--ink), var(--ink)) padding-box, linear-gradient(110deg, var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)) border-box;
-  background-size: 100% 100%, 300% 100%;
-  animation: slide2 6s linear infinite, lightUpBox 9s ease-in-out infinite 4.5s; }
-@keyframes slide2 { from { background-position: 0 0, 0% 50%; } to { background-position: 0 0, 300% 50%; } }
+  background-size: 100% 100%, 100% 100%; }
 .limits h3 { background: linear-gradient(90deg, var(--pink), var(--yellow), var(--pink)); background-size: 200% 100%;
-  -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; display: inline-block;
-  animation: slide 6s linear infinite; }
+  -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; display: inline-block; }
 
 /* --- Footer line --- */
 .footer { position: relative; border-top: none; }
 .footer::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; border-radius: 2px;
-  background: linear-gradient(90deg, var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)); background-size: 200% 100%;
-  animation: slide 5s linear infinite, lightUp 9s ease-in-out infinite 6s; }
+  background: linear-gradient(90deg, var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)); background-size: 200% 100%; }
 
-/* ================= TINY MOTION (all switched off by prefers-reduced-motion) ================= */
-@keyframes rise  { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-@keyframes grow  { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-@keyframes pop   { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
-@keyframes alertPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(204,0,0,0); } 50% { box-shadow: 0 0 0 7px rgba(204,0,0,.16); } }
-@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
-@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-
-.hero, .notice, .empty, .findings, .results { animation: rise .5s ease-out both; }
-.verdict { animation: rise .4s ease-out both; }
-.verdict svg { animation: pop .45s cubic-bezier(.3,1.5,.5,1) .15s both; }
-.verdict.flag { animation: rise .4s ease-out both, alertPulse 2.2s ease-in-out .6s 3; }
-.bc-fill { transform-origin: left center; animation: grow .8s cubic-bezier(.2,.8,.2,1) .1s both; }
-.brain-art { animation: float 6s ease-in-out infinite; }
-
-.loading { aspect-ratio: 1 / 1; display: grid; place-items: center; text-align: center; padding: 12px; border: 2px dashed var(--steel); border-radius: 4px;
-  background: linear-gradient(100deg, transparent 30%, rgba(74,123,157,.18) 50%, transparent 70%); background-size: 200% 100%; animation: shimmer 1.6s linear infinite; }
-
-.stButton > button, [data-testid="stFileUploaderDropzone"] button { transition: transform .15s ease, background-color .15s ease, border-color .15s ease; }
-.stButton > button:hover, [data-testid="stFileUploaderDropzone"] button:hover { transform: translateY(-1px); }
-.stButton > button:active, [data-testid="stFileUploaderDropzone"] button:active { transform: translateY(0); }
-[data-testid="stFileUploaderDropzone"] { transition: border-color .2s ease; }
-[data-testid="stFileUploaderDropzone"]:hover { border-color: var(--ink); }
-[data-testid="stImage"] img { transition: transform .25s ease; }
-[data-testid="stImage"] img:hover { transform: scale(1.02); }
-
-@media (prefers-reduced-motion: reduce) {
-  .stApp *, .stApp *::before, .stApp *::after { animation: none !important; transition: none !important; }
-}
+.loading { aspect-ratio: 1 / 1; display: grid; place-items: center; text-align: center; padding: 12px; border: 2px dashed var(--steel); border-radius: 4px; background: rgba(74,123,157,.08); }
 """
+
+FONT_CSS = "@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap');"
 
 def _clean(html):
     # Streamlit's markdown breaks on blank or indented lines inside HTML, so squash them
     return " ".join(line.strip() for line in html.splitlines() if line.strip())
+
+CSS_CLEAN = _clean(CSS)
 
 CHECK_SVG = ('<svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle cx="16" cy="16" r="14" fill="none" stroke="#1F3F57" stroke-width="2.5"/>'
              '<path d="M9 16.5l5 5 9-11" fill="none" stroke="#1F3F57" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>')
@@ -259,18 +210,30 @@ BRAIN_PATHS = [HERE / "assets" / "brain.png", HERE / "brain.png", HERE.parent / 
 
 @st.cache_data
 def _read_b64(path_str):
-    return base64.b64encode(Path(path_str).read_bytes()).decode()
+    # Shrink the brain picture once and send it as WebP: the page re-sends it on every interaction, so smaller is faster
+    raw = Path(path_str).read_bytes()
+    try:
+        im = Image.open(io.BytesIO(raw))
+        im.load()
+        if im.mode not in ("RGB", "RGBA"):
+            im = im.convert("RGBA")
+        im.thumbnail((640, 640))
+        buf = io.BytesIO()
+        im.save(buf, "WEBP", quality=85, method=6)
+        return "image/webp", base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return "image/png", base64.b64encode(raw).decode()
 
 def brain_b64():
     for p in BRAIN_PATHS:
         if p.exists():
             return _read_b64(str(p))
-    return ""   # not cached, so adding the file later works without a reboot
+    return "", ""   # not cached, so adding the file later works without a reboot
 
 def stage_html(flagged):
-    b64 = brain_b64()
+    mime, b64 = brain_b64()
     # The image goes in CSS (a data URI in an <img> tag can be stripped by Streamlit's markdown renderer).
-    css = f'<style>.brain-art {{ background-image: url("data:image/png;base64,{b64}"); }}</style>' if b64 else ""
+    css = f'<style>.brain-art {{ background-image: url("data:{mime};base64,{b64}"); }}</style>' if b64 else ""
     art = f'<div class="brain-art" role="img" aria-label="{BRAIN_ALT}"></div>' if b64 else ""
     cls = "gantry flag" if flagged else "gantry"
     note = ("An illustration of a human brain, drawn for this project. It is not your scan." if b64
@@ -381,7 +344,7 @@ def predict(data: bytes):
     model = load_model()
     img = Image.open(io.BytesIO(data)).convert("RGB")
     x = TF(img).unsqueeze(0)
-    with LOCK, torch.no_grad():
+    with LOCK, torch.inference_mode():
         p = model(x).softmax(1)[0].cpu().numpy()
     grey = np.asarray(img.convert("L").resize((448, 448)), dtype=np.float32) / 255
     return [float(v) for v in p], (grey * 255).astype("uint8")
@@ -402,6 +365,7 @@ def heatmap(data: bytes):
     over = (0.55 * np.stack([grey] * 3, -1) + glow).clip(0, 1)
     return (over * 255).astype("uint8")
 
+@st.cache_data(show_spinner=False, max_entries=64)
 def check_image(data: bytes):
     """Return None if the bytes are a readable image, otherwise (plain-English reason, the exception)."""
     if not data:
@@ -415,11 +379,12 @@ def check_image(data: bytes):
     try:
         Image.open(io.BytesIO(data)).verify()
     except Exception as e:
-        return "The app could not read that file as an image. Please try a PNG or JPG.", e
+        return "The app could not read that file as an image. Please try a PNG or JPG.", repr(e)
     return None
 
 # ------------------------------------------------------------------ the page
-st.markdown(f"<style>{_clean(CSS)}</style>", unsafe_allow_html=True)
+st.markdown(f"<style>{CSS_CLEAN}</style>", unsafe_allow_html=True)
+st.markdown(f"<style>{FONT_CSS}</style>", unsafe_allow_html=True)   # separate block: fonts never delay the page styles
 st.markdown(TOPBAR_HTML, unsafe_allow_html=True)
 st.markdown(_clean(INTRO_HTML), unsafe_allow_html=True)
 
@@ -472,7 +437,10 @@ with right:
         st.error(problem)
         if problem_detail is not None:
             with st.expander("Technical details"):
-                st.exception(problem_detail)
+                if isinstance(problem_detail, BaseException):
+                    st.exception(problem_detail)
+                else:
+                    st.code(str(problem_detail))
     elif result is None:
         st.markdown(_clean(EMPTY_HTML), unsafe_allow_html=True)
     else:
@@ -494,12 +462,12 @@ if result is not None:
         st.markdown('<div class="section"><h2 class="bc-h2">Scan and heatmap</h2></div>', unsafe_allow_html=True)
         a, b = st.columns(2, gap="large")
         with a:
-            st.image(scan, caption=f"{source}: the scan as the model received it.")
+            st.image(scan, output_format="JPEG", caption=f"{source}: the scan as the model received it.")
         with b:
             slot = st.empty()
             slot.markdown(LOADING_HTML, unsafe_allow_html=True)
             try:
-                slot.image(heatmap(data), caption="Heatmap (Grad-CAM). Brighter areas pushed the score towards bleed.")
+                slot.image(heatmap(data), output_format="JPEG", caption="Heatmap (Grad-CAM). Brighter areas pushed the score towards bleed.")
             except Exception:
                 slot.warning("The heatmap could not be drawn. The result above is still valid.")
         st.markdown('<p class="caption">The heatmap shows what drove the score. It does not show where a bleed is.</p>', unsafe_allow_html=True)
