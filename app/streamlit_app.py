@@ -78,7 +78,7 @@ html, body, [data-testid="stAppViewContainer"], .stApp { background: var(--paper
   background: repeating-conic-gradient(var(--steel) 0deg .7deg, transparent .7deg 7.5deg);
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 13px), #000 calc(100% - 12px));
           mask: radial-gradient(farthest-side, transparent calc(100% - 13px), #000 calc(100% - 12px)); }
-.gantry img { width: 82%; height: auto; display: block; position: relative; z-index: 1; }
+.brain-art { width: 82%; aspect-ratio: 640 / 531; background-repeat: no-repeat; background-position: center; background-size: contain; position: relative; z-index: 1; }
 .gantry.flag { border-color: var(--alert); }
 .gantry.flag::before { border-color: var(--alert); }
 .gantry.flag::after { background: repeating-conic-gradient(var(--alert) 0deg .7deg, transparent .7deg 7.5deg); }
@@ -121,6 +121,7 @@ html, body, [data-testid="stAppViewContainer"], .stApp { background: var(--paper
 [data-baseweb="select"] > div { background: var(--paper); border: 2px solid var(--steel); color: var(--ink); }
 .stButton > button, [data-testid="stFileUploaderDropzone"] button { min-height: 2.75rem; border-radius: 6px; border: 2px solid var(--ink); background: var(--ink); color: var(--paper); font-weight: 700; }
 .stButton > button:hover, [data-testid="stFileUploaderDropzone"] button:hover { background: var(--steel); border-color: var(--steel); color: var(--paper); }
+.stButton > button *, [data-testid="stFileUploaderDropzone"] button, [data-testid="stFileUploaderDropzone"] button * { color: var(--paper) !important; }
 [data-testid="stExpander"] { border: 2px solid var(--steel); border-radius: 8px; background: transparent; }
 [data-testid="stImage"] img { border: 2px solid var(--ink); border-radius: 4px; }
 [data-testid="stImageCaption"] { color: var(--ink); font-size: .95rem; }
@@ -162,20 +163,28 @@ EMPTY_HTML = """
 """
 
 BRAIN_ALT = "Side view of a human brain, shaded in steel blue and cream. This is an illustration, not your scan."
+BRAIN_PATHS = [HERE / "assets" / "brain.png", HERE / "brain.png", HERE.parent / "assets" / "brain.png",
+               HERE.parent / "app" / "assets" / "brain.png"]
 
-@st.cache_resource
+@st.cache_data
+def _read_b64(path_str):
+    return base64.b64encode(Path(path_str).read_bytes()).decode()
+
 def brain_b64():
-    try:
-        return base64.b64encode(BRAIN_IMAGE.read_bytes()).decode()
-    except OSError:
-        return ""
+    for p in BRAIN_PATHS:
+        if p.exists():
+            return _read_b64(str(p))
+    return ""   # not cached, so adding the file later works without a reboot
 
 def stage_html(flagged):
     b64 = brain_b64()
-    img = f'<img src="data:image/png;base64,{b64}" alt="{BRAIN_ALT}">' if b64 else ""
+    # The image goes in CSS (a data URI in an <img> tag can be stripped by Streamlit's markdown renderer).
+    css = f'<style>.brain-art {{ background-image: url("data:image/png;base64,{b64}"); }}</style>' if b64 else ""
+    art = f'<div class="brain-art" role="img" aria-label="{BRAIN_ALT}"></div>' if b64 else ""
     cls = "gantry flag" if flagged else "gantry"
-    return _clean(f'<figure class="stage"><div class="{cls}">{img}</div>'
-                  f'<figcaption>An illustration of a human brain, drawn for this project. It is not your scan.</figcaption></figure>')
+    note = ("An illustration of a human brain, drawn for this project. It is not your scan." if b64
+            else "Brain image not found. Add app/assets/brain.png to the repository.")
+    return css + _clean(f'<figure class="stage"><div class="{cls}">{art}</div><figcaption>{note}</figcaption></figure>')
 
 def verdict_html(p, thr):
     flagged = p >= thr
@@ -275,7 +284,7 @@ st.markdown(_clean(INTRO_HTML), unsafe_allow_html=True)
 examples = {}
 if EXAMPLES.is_dir():
     for f in sorted(EXAMPLES.iterdir()):
-        if f.suffix.lower() in {".png", ".jpg", ".jpeg"}:
+        if f.suffix.lower() in {".png", ".jpg", ".jpeg"} and f.name != "brain.png":
             truth = "bleed" if "bleed" in f.name.lower() else "normal"
             examples[f"Public example {len(examples) + 1} (labelled {truth} in the data set)"] = f
 
