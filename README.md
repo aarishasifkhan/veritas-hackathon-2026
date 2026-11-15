@@ -1,4 +1,4 @@
-# BleedCheck CT | flagging brain bleeds on head CT
+# BleedCheck CT | A second look at head CT scans 
 **Track:** AI + Health
 **Team:** Aarish Asif Khan, Aabir Asif Khan
 
