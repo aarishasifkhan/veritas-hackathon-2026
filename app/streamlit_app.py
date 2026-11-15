@@ -39,7 +39,7 @@ SHOW_ORDER = [1, 2, 0]                    # show Bleeding first, then Ischemia, 
 st.set_page_config(page_title="BleedCheck CT", layout="wide", initial_sidebar_state="collapsed")
 
 # ------------------------------------------------------------------ look and feel
-# Three colours only: cream paper, steel blue (in a light and a deep shade) and red.
+# Cream paper, steel blue, neon pink and cyan accents, and red.
 # Red means one thing: "possible bleed".
 CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap');
@@ -133,6 +133,85 @@ html, body, [data-testid="stAppViewContainer"], .stApp { background: var(--paper
   .results { font-size: .9rem; } .results th, .results td { padding: 9px 8px; }
 }
 @media (prefers-reduced-motion: reduce) { .stApp * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+/* ================= NEON LAYER ================= */
+:root { --pink:#FF2E9A; --cyan:#19E3FF; --violet:#8A5CFF; }
+
+/* --- Neon ring and aura around the brain (turns red when a bleed is flagged) --- */
+.gantry:not(.flag) {
+  border-color: var(--pink);
+  background: radial-gradient(circle, rgba(255,46,154,.16) 0%, rgba(25,227,255,.10) 55%, transparent 72%);
+  animation: ringPulse 5s ease-in-out infinite;
+}
+.gantry:not(.flag)::before { border-color: var(--cyan); animation: spinRev 50s linear infinite; }
+.gantry:not(.flag)::after {
+  background: repeating-conic-gradient(var(--pink) 0deg .7deg, transparent .7deg 3.75deg, var(--cyan) 3.75deg 4.45deg, transparent 4.45deg 7.5deg);
+  filter: drop-shadow(0 0 4px var(--pink)) drop-shadow(0 0 8px var(--cyan));
+  animation: spin 40s linear infinite;
+}
+.gantry.flag { animation: alertPulse 1.6s ease-in-out infinite; }
+.brain-art { animation: brainGlow 5s ease-in-out infinite; }
+
+@keyframes spin    { to { transform: rotate(360deg); } }
+@keyframes spinRev { to { transform: rotate(-360deg); } }
+@keyframes ringPulse {
+  0%,100% { box-shadow: 0 0 10px 1px var(--pink), 0 0 26px 4px rgba(255,46,154,.45), inset 0 0 18px rgba(255,46,154,.35); border-color: var(--pink); }
+  50%     { box-shadow: 0 0 10px 1px var(--cyan), 0 0 30px 6px rgba(25,227,255,.45), inset 0 0 22px rgba(25,227,255,.35); border-color: var(--cyan); }
+}
+@keyframes alertPulse {
+  0%,100% { box-shadow: 0 0 10px 1px var(--alert), 0 0 24px 4px rgba(204,0,0,.4); }
+  50%     { box-shadow: 0 0 16px 3px var(--alert), 0 0 40px 10px rgba(204,0,0,.5); }
+}
+@keyframes brainGlow {
+  0%,100% { filter: drop-shadow(0 0 6px var(--pink)) drop-shadow(0 0 18px rgba(255,46,154,.6)); }
+  50%     { filter: drop-shadow(0 0 6px var(--cyan)) drop-shadow(0 0 18px rgba(138,92,255,.6)); }
+}
+
+/* --- A light that travels down the page: top bar, then each section lights up in turn --- */
+.topbar { border-bottom: 3px solid transparent; border-image: linear-gradient(90deg, var(--steel), var(--pink), var(--cyan), var(--violet), var(--steel)) 1; border-image-slice: 1; }
+.topbar { background: linear-gradient(90deg, transparent, rgba(255,46,154,.10), rgba(25,227,255,.10), transparent) 0 100% / 300% 3px no-repeat; animation: sweep 6s linear infinite; }
+@keyframes sweep { from { background-position: 200% 100%; } to { background-position: -100% 100%; } }
+
+.hero, .notice, .findings, .verdict, .results, .limits, .empty { transition: box-shadow .25s ease, transform .25s ease, border-color .25s ease; }
+.hero    { animation: hop 18s ease-in-out infinite 0s; }
+.notice  { animation: hop 18s ease-in-out infinite 3s; }
+.verdict, .empty { animation: hop 18s ease-in-out infinite 6s; }
+.findings { animation: hop 18s ease-in-out infinite 9s; }
+.results { animation: hop 18s ease-in-out infinite 12s; }
+.limits  { animation: hop 18s ease-in-out infinite 15s; }
+@keyframes hop {
+  0%   { box-shadow: 0 0 0 0 rgba(255,46,154,0); }
+  4%, 14% { box-shadow: 0 0 12px 2px rgba(255,46,154,.75), 0 0 30px 6px rgba(25,227,255,.45); }
+  18%, 100% { box-shadow: 0 0 0 0 rgba(255,46,154,0); }
+}
+
+/* --- Hover effects --- */
+.hero:hover, .notice:hover, .findings:hover, .empty:hover, .limits:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 0 14px 2px var(--pink), 0 0 34px 8px rgba(25,227,255,.45);
+  animation-play-state: paused;
+}
+.verdict:not(.flag):hover { transform: translateY(-3px); box-shadow: 0 0 14px 2px var(--cyan), 0 0 34px 8px rgba(138,92,255,.4); }
+.verdict.flag:hover { transform: translateY(-3px); box-shadow: 0 0 16px 3px var(--alert), 0 0 38px 10px rgba(204,0,0,.45); }
+.results tr:hover td { background: rgba(255,46,154,.10); box-shadow: inset 0 0 10px rgba(25,227,255,.5); }
+.bc-row:hover .bc-track { box-shadow: 0 0 10px var(--cyan), 0 0 22px rgba(255,46,154,.5); }
+.bc-brand { transition: text-shadow .25s ease; }
+.bc-brand:hover { text-shadow: 0 0 8px var(--pink), 0 0 18px var(--cyan); }
+.stApp .bc-h2 { transition: text-shadow .25s ease; }
+.stApp .bc-h2:hover { text-shadow: 0 0 6px rgba(255,46,154,.7), 0 0 16px rgba(25,227,255,.6); }
+[data-testid="stImage"] img { transition: box-shadow .25s ease, transform .25s ease; }
+[data-testid="stImage"] img:hover { transform: scale(1.015); box-shadow: 0 0 14px 2px var(--pink), 0 0 30px 6px rgba(25,227,255,.5); }
+.stButton > button, [data-testid="stFileUploaderDropzone"] button { transition: box-shadow .2s ease, transform .2s ease, background .2s ease; }
+.stButton > button:hover, [data-testid="stFileUploaderDropzone"] button:hover { transform: translateY(-2px); box-shadow: 0 0 12px var(--pink), 0 0 26px rgba(25,227,255,.6); }
+[data-testid="stFileUploaderDropzone"], [data-testid="stExpander"], [data-baseweb="select"] > div { transition: box-shadow .25s ease, border-color .25s ease; }
+[data-testid="stFileUploaderDropzone"]:hover, [data-testid="stExpander"]:hover, [data-baseweb="select"] > div:hover {
+  border-color: var(--pink); box-shadow: 0 0 12px var(--pink), 0 0 26px rgba(25,227,255,.45);
+}
+
+/* Motion off for anyone who asks for it (the pseudo-elements need their own rule) */
+@media (prefers-reduced-motion: reduce) {
+  .stApp *, .gantry::before, .gantry::after { animation: none !important; transition: none !important; }
+}
 """
 
 def _clean(html):
