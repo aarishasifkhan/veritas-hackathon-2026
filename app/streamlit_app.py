@@ -18,7 +18,10 @@ from torchvision import transforms as T
 GITHUB_USER = "aarishasifkhan"
 GITHUB_REPO = "veritas-hackathon-2026"
 WEIGHTS_VERSION = "v1"                    # the release tag holding the weights; use "v2" if you publish new weights later
-WEIGHTS_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/download/{WEIGHTS_VERSION}/bleedcheck_weights.pt"
+# The release asset can be named any of these. The app tries each in turn, so a ".pt.zip" or ".zip" upload also works
+# (a PyTorch .pt file is itself a zip archive, and torch.load reads it by content, not by file name).
+WEIGHT_FILE_NAMES = ["bleedcheck_weights.pt", "bleedcheck_weights.pt.zip", "bleedcheck_weights.zip"]
+WEIGHTS_URLS = [f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/download/{WEIGHTS_VERSION}/{n}" for n in WEIGHT_FILE_NAMES]
 REPO_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}"
 
 # Copy these from the notebook's "Summary of results" section after the final run
@@ -297,11 +300,19 @@ LOCK = threading.Lock()      # the cached model is shared, so run one analysis a
 CREAM = np.array([1.0, 1.0, 0.94], dtype=np.float32)
 
 def _download_weights():
-    # Download to a temporary file first, so an interrupted download never leaves a broken .pt behind
+    # Download to a temporary file first, so an interrupted download never leaves a broken .pt behind.
+    # Try each possible release file name until one works.
     tmp = WEIGHTS.with_suffix(".tmp")
+    errors = []
     try:
-        urllib.request.urlretrieve(WEIGHTS_URL, tmp)
-        tmp.replace(WEIGHTS)
+        for url in WEIGHTS_URLS:
+            try:
+                urllib.request.urlretrieve(url, tmp)
+                tmp.replace(WEIGHTS)
+                return
+            except Exception as e:
+                errors.append(f"{url} -> {e}")
+        raise RuntimeError("Could not download the model weights. Tried:\n" + "\n".join(errors))
     finally:
         if tmp.exists():
             tmp.unlink()
