@@ -29,7 +29,7 @@ RESULTS_ROWS = [
 
 HERE = Path(__file__).parent
 WEIGHTS = HERE / f"bleedcheck_weights_{WEIGHTS_VERSION}.pt"
-EXAMPLES = HERE / "examples"
+EXAMPLES = HERE
 CLASSES = ["Normal", "Bleeding", "Ischemia"]
 
 st.set_page_config(page_title="BleedCheck CT", layout="wide", initial_sidebar_state="collapsed")
