@@ -1,4 +1,5 @@
 """BleedCheck CT: a research prototype. Not medical advice."""
+import base64
 import io
 import threading
 import urllib.request
@@ -15,7 +16,7 @@ from torchvision import transforms as T
 
 # ------------------------------------------------------------------ things you may need to edit
 GITHUB_USER = "aarishasifkhan"
-GITHUB_REPO = "veritas-hackathon-2026"    # fixed: the old value "veritas-hacakthon-2026" had a typo and broke the GitHub link
+GITHUB_REPO = "veritas-hackathon-2026"
 WEIGHTS_VERSION = "v1"                    # the release tag holding the weights; use "v2" if you publish new weights later
 WEIGHTS_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/download/{WEIGHTS_VERSION}/bleedcheck_weights.pt"
 REPO_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}"
@@ -31,79 +32,96 @@ RESULTS_ROWS = [
 HERE = Path(__file__).parent
 WEIGHTS = HERE / f"bleedcheck_weights_{WEIGHTS_VERSION}.pt"
 EXAMPLES = HERE
+BRAIN_IMAGE = HERE / "assets" / "brain.png"
 CLASSES = ["Normal", "Bleeding", "Ischemia"]
 SHOW_ORDER = [1, 2, 0]                    # show Bleeding first, then Ischemia, then Normal
 
 st.set_page_config(page_title="BleedCheck CT", layout="wide", initial_sidebar_state="collapsed")
 
 # ------------------------------------------------------------------ look and feel
-# Palette: cream paper, steel-blue ink, light blue and mint surfaces. Red means one thing only: "possible bleed".
+# Three colours only: cream paper, steel blue (in a light and a deep shade) and red.
+# Red means one thing: "possible bleed".
 CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap');
-:root { --paper:#FFFFF0; --steel:#4A7B9D; --steel-deep:#2F5D7C; --sky:#8FBBCB; --mint:#CCEDE6; --alert:#CC0000; --ink:#12283A; }
+:root { --paper:#FFFFF0; --steel:#4A7B9D; --ink:#1F3F57; --alert:#CC0000; }
 html, body, [data-testid="stAppViewContainer"], .stApp { background: var(--paper); color: var(--ink); }
 .stApp { font-family: 'Atkinson Hyperlegible', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 1.0625rem; line-height: 1.6; }
 #MainMenu, footer, header[data-testid="stHeader"] { visibility: hidden; height: 0; }
-.block-container, [data-testid="stMainBlockContainer"] { max-width: 62rem; padding: 1.6rem 1.5rem 3.5rem; }
+.block-container, [data-testid="stMainBlockContainer"] { max-width: 70rem; padding: 1.6rem 1.5rem 3.5rem; }
 
-.stApp a { color: var(--steel-deep); text-decoration-thickness: 2px; text-underline-offset: 3px; }
-.stApp a:hover { color: var(--ink); }
-.stApp :focus-visible { outline: 3px solid var(--ink) !important; outline-offset: 3px !important; box-shadow: 0 0 0 6px var(--sky) !important; }
+.stApp a { color: var(--ink); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.stApp a:hover { color: var(--steel); }
+.stApp :focus-visible { outline: 3px solid var(--ink) !important; outline-offset: 3px !important; box-shadow: 0 0 0 6px var(--paper), 0 0 0 9px var(--steel) !important; }
 
 .stApp .bc-title, .stApp .bc-h2, .bc-brand { font-family: 'Newsreader', Georgia, 'Times New Roman', serif; color: var(--ink); font-weight: 600; letter-spacing: -.01em; }
-.topbar { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-bottom: 12px; border-bottom: 2px solid var(--sky); margin-bottom: 30px; }
+.topbar { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-bottom: 12px; border-bottom: 2px solid var(--steel); margin-bottom: 30px; }
 .bc-brand { font-size: 1.4rem; }
-.tag { font-size: .95rem; color: var(--steel-deep); }
+.tag { font-size: .95rem; }
 
 .hero { border-left: 6px solid var(--steel); padding: 2px 0 2px 20px; margin-bottom: 22px; }
 .stApp h1.bc-title { font-size: clamp(2.1rem, 5vw, 3.3rem); line-height: 1.1; margin: 0 0 12px; padding: 0; }
 .hero p { margin: 6px 0; max-width: 62ch; }
 .hero .lede { font-size: 1.2rem; }
-.notice { background: var(--mint); border: 2px solid var(--steel-deep); border-radius: 8px; padding: 12px 16px; margin: 0 0 30px; max-width: 70ch; }
+.notice { border: 2px solid var(--steel); border-radius: 8px; padding: 12px 16px; margin: 0 0 34px; max-width: 70ch; }
 .notice p { margin: 4px 0; }
 
 .stApp h2.bc-h2 { font-size: 1.55rem; line-height: 1.2; margin: 0 0 10px; padding: 0; }
-.hint { font-size: .95rem; color: var(--steel-deep); margin: 8px 0 14px; }
-.empty { border: 2px dashed var(--steel-deep); border-radius: 8px; padding: 26px 22px; background: var(--mint); }
+.hint { font-size: .95rem; margin: 8px 0 14px; }
+.empty { border: 2px dashed var(--steel); border-radius: 8px; padding: 26px 22px; }
 .empty b { font-family: 'Newsreader', Georgia, serif; font-size: 1.25rem; }
 
-.verdict { display: flex; gap: 14px; align-items: flex-start; padding: 14px 18px; border: 2px solid var(--ink); border-radius: 8px; margin-bottom: 14px; background: var(--mint); }
+/* The brain sits inside a CT-scanner ring. The ring turns red when the tool flags a scan. */
+.stage { margin: 0; padding: 22px 0 0; text-align: center; }
+.gantry { position: relative; width: min(88%, 24rem); aspect-ratio: 1 / 1; margin: 0 auto; border-radius: 50%; border: 6px solid var(--steel); display: grid; place-items: center; }
+.gantry::before { content: ""; position: absolute; inset: 14px; border-radius: 50%; border: 2px dashed var(--steel); }
+.gantry::after { content: ""; position: absolute; inset: -20px; border-radius: 50%;
+  background: repeating-conic-gradient(var(--steel) 0deg .7deg, transparent .7deg 7.5deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 13px), #000 calc(100% - 12px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 13px), #000 calc(100% - 12px)); }
+.gantry img { width: 82%; height: auto; display: block; position: relative; z-index: 1; }
+.gantry.flag { border-color: var(--alert); }
+.gantry.flag::before { border-color: var(--alert); }
+.gantry.flag::after { background: repeating-conic-gradient(var(--alert) 0deg .7deg, transparent .7deg 7.5deg); }
+.stage figcaption { font-size: .92rem; margin-top: 34px; max-width: 30ch; margin-left: auto; margin-right: auto; }
+
+.verdict { display: flex; gap: 14px; align-items: flex-start; padding: 14px 18px; border: 2px solid var(--steel); border-left-width: 12px; border-radius: 8px; margin-bottom: 14px; }
 .verdict svg { flex: none; width: 2.2rem; height: 2.2rem; margin-top: 2px; }
 .v-title { font-family: 'Newsreader', Georgia, serif; font-size: 1.6rem; font-weight: 600; line-height: 1.15; display: block; }
 .verdict p { margin: 4px 0 0; }
-.verdict.flag { background: var(--paper); border-color: var(--alert); border-left-width: 12px; }
+.verdict.flag { border-color: var(--alert); }
 .verdict.flag .v-title { color: var(--alert); }
 
-.findings { border: 2px solid var(--sky); border-radius: 8px; padding: 6px 16px 12px; background: var(--paper); }
+.findings { border: 2px solid var(--steel); border-radius: 8px; padding: 6px 16px 12px; }
 .bc-row { display: grid; grid-template-columns: 6.5rem 1fr 3.6rem; gap: 12px; align-items: center; margin: 12px 0; }
-.bc-track { position: relative; height: 1.3rem; background: var(--mint); border: 1px solid var(--steel-deep); border-radius: 3px; }
+.bc-track { position: relative; height: 1.3rem; border: 2px solid var(--steel); border-radius: 3px; background: var(--paper); }
 .bc-fill { height: 100%; background: var(--steel); }
 .bc-fill.hot { background: var(--alert); }
-.bc-line { position: absolute; top: -7px; bottom: -7px; width: 3px; background: var(--ink); }
+.bc-line { position: absolute; top: -8px; bottom: -8px; width: 3px; background: var(--ink); }
 .bc-num { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
-.caption { font-size: .95rem; color: var(--steel-deep); line-height: 1.5; margin: 6px 0 0; }
+.caption { font-size: .95rem; line-height: 1.5; margin: 6px 0 0; }
 
-.section { margin-top: 40px; }
-.results { width: 100%; border-collapse: collapse; border: 2px solid var(--steel-deep); font-size: 1rem; background: var(--paper); }
-.results caption { text-align: left; padding: 0 0 8px; color: var(--steel-deep); font-size: .95rem; caption-side: bottom; }
-.results th { text-align: left; font-weight: 700; padding: 10px 14px; background: var(--sky); color: var(--ink); border-bottom: 2px solid var(--steel-deep); }
-.results td { padding: 11px 14px; border-bottom: 1px solid var(--sky); }
+.section { margin-top: 44px; }
+.results { width: 100%; border-collapse: collapse; border: 2px solid var(--ink); font-size: 1rem; }
+.results caption { text-align: left; padding: 0 0 8px; font-size: .95rem; caption-side: bottom; }
+.results th { text-align: left; font-weight: 700; padding: 10px 14px; background: var(--ink); color: var(--paper); }
+.results td { padding: 11px 14px; border-bottom: 1px solid var(--steel); }
 .results tr:last-child td { border-bottom: none; }
 .results td:not(:first-child), .results th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; width: 22%; }
-.results tr.base td { background: var(--mint); }
+.results tr.base td { font-style: italic; border-bottom: 2px solid var(--ink); }
 
-.limits { background: var(--sky); border-radius: 8px; padding: 14px 18px; margin: 24px 0 0; max-width: 78ch; }
-.limits h3 { font-family: 'Newsreader', Georgia, serif; font-size: 1.3rem; margin: 0 0 6px; padding: 0; color: var(--ink); }
-.limits p { margin: 6px 0; }
-.footer { margin-top: 40px; padding-top: 16px; border-top: 2px solid var(--sky); font-size: .95rem; line-height: 1.65; max-width: 80ch; }
+.limits { background: var(--ink); color: var(--paper); border-radius: 8px; padding: 16px 22px; margin: 26px 0 0; max-width: 78ch; }
+.limits h3 { font-family: 'Newsreader', Georgia, serif; font-size: 1.35rem; margin: 0 0 6px; padding: 0; color: var(--paper); }
+.limits p { margin: 6px 0; color: var(--paper); }
+.footer { margin-top: 40px; padding-top: 16px; border-top: 2px solid var(--steel); font-size: .95rem; line-height: 1.65; max-width: 80ch; }
 
 /* Streamlit widgets */
-[data-testid="stFileUploaderDropzone"] { background: var(--mint); border: 2px dashed var(--steel-deep); border-radius: 8px; color: var(--ink); }
+[data-testid="stFileUploaderDropzone"] { background: var(--paper); border: 2px dashed var(--steel); border-radius: 8px; color: var(--ink); }
 [data-testid="stFileUploaderDropzone"] small, [data-testid="stFileUploaderDropzone"] span { color: var(--ink); }
 [data-testid="stWidgetLabel"] p { font-weight: 700; color: var(--ink); }
-.stButton > button, [data-testid="stFileUploaderDropzone"] button { min-height: 2.75rem; border-radius: 6px; border: 2px solid var(--steel-deep); background: var(--steel-deep); color: #FFFFFF; font-weight: 700; }
-.stButton > button:hover, [data-testid="stFileUploaderDropzone"] button:hover { background: var(--ink); border-color: var(--ink); color: #FFFFFF; }
-[data-testid="stExpander"] { border: 2px solid var(--sky); border-radius: 8px; background: transparent; }
+[data-baseweb="select"] > div { background: var(--paper); border: 2px solid var(--steel); color: var(--ink); }
+.stButton > button, [data-testid="stFileUploaderDropzone"] button { min-height: 2.75rem; border-radius: 6px; border: 2px solid var(--ink); background: var(--ink); color: var(--paper); font-weight: 700; }
+.stButton > button:hover, [data-testid="stFileUploaderDropzone"] button:hover { background: var(--steel); border-color: var(--steel); color: var(--paper); }
+[data-testid="stExpander"] { border: 2px solid var(--steel); border-radius: 8px; background: transparent; }
 [data-testid="stImage"] img { border: 2px solid var(--ink); border-radius: 4px; }
 [data-testid="stImageCaption"] { color: var(--ink); font-size: .95rem; }
 
@@ -120,8 +138,8 @@ def _clean(html):
     # Streamlit's markdown breaks on blank or indented lines inside HTML, so squash them
     return " ".join(line.strip() for line in html.splitlines() if line.strip())
 
-CHECK_SVG = ('<svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle cx="16" cy="16" r="14" fill="none" stroke="#12283A" stroke-width="2.5"/>'
-             '<path d="M9 16.5l5 5 9-11" fill="none" stroke="#12283A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>')
+CHECK_SVG = ('<svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle cx="16" cy="16" r="14" fill="none" stroke="#1F3F57" stroke-width="2.5"/>'
+             '<path d="M9 16.5l5 5 9-11" fill="none" stroke="#1F3F57" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>')
 FLAG_SVG = ('<svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M16 3L30 28H2z" fill="#CC0000"/>'
             '<path d="M16 12v8" stroke="#FFFFF0" stroke-width="3" stroke-linecap="round"/><circle cx="16" cy="24" r="1.8" fill="#FFFFF0"/></svg>')
 
@@ -142,6 +160,22 @@ INTRO_HTML = """
 EMPTY_HTML = """
 <div class="empty"><b>No scan selected yet.</b><br>Upload an image on the left, or choose a public example. The result and the heatmap appear here.</div>
 """
+
+BRAIN_ALT = "Side view of a human brain, shaded in steel blue and cream. This is an illustration, not your scan."
+
+@st.cache_resource
+def brain_b64():
+    try:
+        return base64.b64encode(BRAIN_IMAGE.read_bytes()).decode()
+    except OSError:
+        return ""
+
+def stage_html(flagged):
+    b64 = brain_b64()
+    img = f'<img src="data:image/png;base64,{b64}" alt="{BRAIN_ALT}">' if b64 else ""
+    cls = "gantry flag" if flagged else "gantry"
+    return _clean(f'<figure class="stage"><div class="{cls}">{img}</div>'
+                  f'<figcaption>An illustration of a human brain, drawn for this project. It is not your scan.</figcaption></figure>')
 
 def verdict_html(p, thr):
     flagged = p >= thr
@@ -191,7 +225,7 @@ We tested on Head CT - hemorrhage by Felipe Kitamura (CC0). The example scans co
 MEAN, STD = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
 TF = T.Compose([T.Resize((224, 224)), T.ToTensor(), T.Normalize(MEAN, STD)])
 LOCK = threading.Lock()      # the cached model is shared, so run one analysis at a time
-MINT = np.array([0.80, 0.93, 0.90], dtype=np.float32)
+CREAM = np.array([1.0, 1.0, 0.94], dtype=np.float32)
 
 @st.cache_resource(show_spinner="Loading the model (first visit only)...")
 def load_model():
@@ -227,9 +261,9 @@ def analyse(data: bytes):
         cam, p = gradcam(model, x)
     grey = np.asarray(img.convert("L").resize((448, 448)), dtype=np.float32) / 255
     cam_big = np.asarray(Image.fromarray((cam * 255).astype("uint8")).resize((448, 448)), dtype=np.float32) / 255
-    # One-colour glow instead of a rainbow map: brighter mint means a stronger push towards "bleed".
+    # A one-colour glow instead of a rainbow map: brighter means a stronger push towards "bleed".
     # It stays readable for colour-blind viewers and keeps red reserved for the alert.
-    glow = (cam_big ** 1.5)[..., None] * MINT * 0.9
+    glow = (cam_big ** 1.5)[..., None] * CREAM * 0.9
     over = (0.55 * np.stack([grey] * 3, -1) + glow).clip(0, 1)
     return [float(v) for v in p], (grey * 255).astype("uint8"), (over * 255).astype("uint8")
 
@@ -245,7 +279,8 @@ if EXAMPLES.is_dir():
             truth = "bleed" if "bleed" in f.name.lower() else "normal"
             examples[f"Public example {len(examples) + 1} (labelled {truth} in the data set)"] = f
 
-left, right = st.columns(2, gap="large")
+# Left: choose a scan. Middle: the brain. Right: the result. On a phone they stack in that order.
+left, mid, right = st.columns([1, 1.15, 1], gap="large")
 
 with left:
     st.markdown('<h2 class="bc-h2">1. Choose a scan</h2>', unsafe_allow_html=True)
@@ -262,20 +297,27 @@ if upload is not None:
 elif choice != "None":
     data, source = examples[choice].read_bytes(), choice
 
-result = None
+result, failed = None, False
+if data is not None:
+    try:
+        result = analyse(data)
+    except Exception:
+        failed = True
+
+flagged = result is not None and result[0][1] >= thr
+
+with mid:
+    st.markdown(stage_html(flagged), unsafe_allow_html=True)
+
 with right:
     st.markdown('<h2 class="bc-h2">2. Read the result</h2>', unsafe_allow_html=True)
-    if data is None:
+    if failed:
+        st.error("The app could not read that file as an image. Please try a PNG or JPG.")
+    elif result is None:
         st.markdown(_clean(EMPTY_HTML), unsafe_allow_html=True)
     else:
-        try:
-            probs, scan, over = analyse(data)
-        except Exception:
-            st.error("The app could not read that file as an image. Please try a PNG or JPG.")
-        else:
-            result = (probs, scan, over)
-            st.markdown(verdict_html(probs[1], thr), unsafe_allow_html=True)
-            st.markdown(findings_html(probs, thr), unsafe_allow_html=True)
+        st.markdown(verdict_html(result[0][1], thr), unsafe_allow_html=True)
+        st.markdown(findings_html(result[0], thr), unsafe_allow_html=True)
 
 if result is not None:
     probs, scan, over = result
@@ -284,7 +326,7 @@ if result is not None:
     with a:
         st.image(scan, caption=f"{source}: the scan as the model received it.")
     with b:
-        st.image(over, caption="Heatmap (Grad-CAM). Brighter mint marks areas that pushed the score towards bleed.")
+        st.image(over, caption="Heatmap (Grad-CAM). Brighter areas pushed the score towards bleed.")
     st.markdown('<p class="caption">The heatmap shows what drove the score. It does not show where a bleed is.</p>', unsafe_allow_html=True)
 
 st.markdown('<div class="section"><h2 class="bc-h2">How it did in our tests</h2></div>', unsafe_allow_html=True)
