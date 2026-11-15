@@ -6,6 +6,8 @@
 
 **Live demo:** https://bleedcheck-ct.streamlit.app
 
+**Submission video:** https://youtu.be/ZO6M_Wn9Gow
+
 **Notebook with outputs:** https://www.kaggle.com/code/aarishasifkhan/bleedcheck-ct-a-second-look-at-head-ct-scans
 
 > This project is a prototype and is not medical advice.
