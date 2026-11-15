@@ -25,14 +25,14 @@ Our project is our own idea, related to the suggested pneumonia X-ray project. W
 - **Our own question.** Does the tool still work on scans from a different hospital source, and how many local scans does it need to adapt?
 - **A harder "no bleed" class.** Ischemia scans count as "no bleed", so the model must tell a bleed from a clot, not only from a healthy brain.
 - **Two kinds of error, reported separately.** We report missed bleeds and false alarms for every test set.
-- **A second data source.** We tested on 200 scans from a different publisher.
+- **A second data source.** We used 200 scans from a different publisher. We split them in half: 100 to compare experiments and fine-tune, and 100 kept for one final test.
 - **A written log** of every experiment and mistake: `docs/experiment_log.md`.
 
 ## How it works
 
 **Data.** We trained on the Brain Stroke CT Dataset from Kaggle, a copy of the TEKNOFEST-2021 stroke data from the Turkish Ministry of Health. It holds 6,650 anonymised head CT slices (4,427 normal, 1,093 bleeding, 1,130 ischemia). We split it 70/15/15 into 4,655 training, 997 validation and 998 test images. The data has no patient IDs, so slices from one patient can land in both training and test. Our same-source scores may therefore look better than they should. Full details are in [DATA.md](DATA.md).
 
-**Model.** We fine-tuned a ResNet18 pretrained on ImageNet to sort slices into three classes. Class weights help it learn the rarer bleeding and ischemia classes. We keep the epoch with the best validation AUC. We chose this plain ResNet18 by a rule we wrote before looking at any test set. We trained it four times with different random seeds and report the mean and the range.
+**Model.** We fine-tuned a ResNet18 pretrained on ImageNet to sort slices into three classes. Class weights help it learn the rarer bleeding and ischemia classes. We keep the epoch with the best validation AUC. We chose this plain ResNet18 by a rule we wrote before looking at the test split or the final Kitamura half. We trained it four times with different random seeds and report the mean and the range.
 
 ## Results
 
@@ -60,15 +60,15 @@ Ranges show the lowest and highest of four training runs. Same-source scores are
 
 ## Our own question: how many local scans does a new hospital need?
 
-We fine-tuned the model on 10, 20, 40 or 100 labelled scans from the new source, then tested on that source's other half (3 seeds each).
+We fine-tuned our demo model (one of the four runs) on 10, 20, 40 or 100 labelled scans from the new source, then tested on the other 100 scans from that source (3 random draws each).
 
-| Local scans | False alarms (new source) | Bleeds caught (new source) | AUC (new source) | Bleeds caught (original data) |
+| Local scans | False alarms (new source) | Bleeds caught (new source) | AUC (new source) | Bleeds caught (original data, validation split) |
 | --- | --- | --- | --- | --- |
 | 0 | 20.0% | 92.0% | 0.937 | 88.4% |
 | 40 | 1.3% | 94.0% | 0.992 | 78.3% |
 | 100 | 1.3% | 95.3% | 0.997 | 86.8% |
 
-With about 100 local scans, false alarms on the new source fell from 20% to about 1%. The same fine-tuning cost recall on the original data: it dropped to about 77% at 20–40 scans and recovered to 87% at 100. The 0-scan row uses a different half of the new source than the table above, so its numbers differ slightly. This is one new source and three seeds, so we treat the result as a lead, not a guarantee. We suggest that a hospital test the tool on its own labelled scans before relying on it.
+With about 100 local scans, false alarms on the new source fell from 20% to about 1%. The same fine-tuning cost recall on the original data: it fell to 78% at 40 scans and recovered to 87% at 100. The 0-scan row is the single demo model, while the results table above averages all four runs, so the numbers differ slightly. Both use the same 100 held-out scans. At 100 local scans the model sees every scan in the local half, so the three draws differ only in training order. This is one new source and three draws, so we treat the result as a lead, not a guarantee. We suggest that a hospital test the tool on its own labelled scans before relying on it.
 
 ## What we'd do next
 
