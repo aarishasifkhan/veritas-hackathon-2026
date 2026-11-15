@@ -1,8 +1,11 @@
 # BleedCheck CT: a second look at head CT scans
 
 **Track:** AI + Health
+
 **Team:** Aarish Asif Khan, Aabir Asif Khan
+
 **Live demo:** https://bleedcheck-ct.streamlit.app
+
 **Notebook with outputs:** https://www.kaggle.com/code/aarishasifkhan/bleedcheck-ct-a-second-look-at-head-ct-scans
 
 > This project is a prototype and is not medical advice.
