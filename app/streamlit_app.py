@@ -15,13 +15,14 @@ from torchvision import transforms as T
 
 # ------------------------------------------------------------------ things you may need to edit
 GITHUB_USER = "aarishasifkhan"
-GITHUB_REPO = "veritas-hacakthon-2026"            # <- put the exact repository name here
+GITHUB_REPO = "veritas-hackathon-2026"    # fixed: the old value "veritas-hacakthon-2026" had a typo and broke the GitHub link
 WEIGHTS_VERSION = "v1"                    # the release tag holding the weights; use "v2" if you publish new weights later
 WEIGHTS_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/download/{WEIGHTS_VERSION}/bleedcheck_weights.pt"
 REPO_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}"
 
 # Copy these from the notebook's "Summary of results" section after the final run
 RESULTS_ROWS = [
+    ("Baseline: always say \"no bleed\"", "0%", "0%"),
     ("Same source as the training data", "91%", "0.7%"),
     ("A different public source", "91%", "16%"),
     ("Different source, after tuning on 100 local scans", "95%", "1%"),
@@ -31,114 +32,166 @@ HERE = Path(__file__).parent
 WEIGHTS = HERE / f"bleedcheck_weights_{WEIGHTS_VERSION}.pt"
 EXAMPLES = HERE
 CLASSES = ["Normal", "Bleeding", "Ischemia"]
+SHOW_ORDER = [1, 2, 0]                    # show Bleeding first, then Ischemia, then Normal
 
 st.set_page_config(page_title="BleedCheck CT", layout="wide", initial_sidebar_state="collapsed")
 
-# ------------------------------------------------------------------ look and feel (plain HTML + CSS, no scripts)
+# ------------------------------------------------------------------ look and feel
+# Palette: cream paper, steel-blue ink, light blue and mint surfaces. Red means one thing only: "possible bleed".
 CSS = """
-html, body, [data-testid="stAppViewContainer"], .stApp { background: #F6F6F9; }
-html, body, .stApp, .stApp * { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap');
+:root { --paper:#FFFFF0; --steel:#4A7B9D; --steel-deep:#2F5D7C; --sky:#8FBBCB; --mint:#CCEDE6; --alert:#CC0000; --ink:#12283A; }
+html, body, [data-testid="stAppViewContainer"], .stApp { background: var(--paper); color: var(--ink); }
+.stApp { font-family: 'Atkinson Hyperlegible', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 1.0625rem; line-height: 1.6; }
 #MainMenu, footer, header[data-testid="stHeader"] { visibility: hidden; height: 0; }
-.block-container, [data-testid="stMainBlockContainer"] { max-width: 1080px; padding: 1.6rem 1.5rem 3rem; }
-.topbar { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 14px; border-bottom: 1px solid #E3E5EC; margin-bottom: 28px; }
-.brand { font-weight: 700; font-size: 1.05rem; color: #1F2430; }
-.tag { font-size: .85rem; color: #6A7083; }
-.page-title { font-size: 2rem; line-height: 1.2; font-weight: 650; letter-spacing: -.015em; color: #1F2430; margin: 0 0 10px; }
-.lede { font-size: 1.05rem; line-height: 1.55; color: #454B5E; max-width: 680px; margin: 0 0 18px; }
-.notice { border-left: 3px solid #C77700; background: #FFF8EB; padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: .92rem; color: #5C3D00; line-height: 1.5; margin-bottom: 26px; }
-.step { font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: #6A7083; font-weight: 600; margin: 4px 0 8px; }
-.hint { font-size: .88rem; color: #6A7083; line-height: 1.5; margin: 6px 0 12px; }
-.empty { border: 1px dashed #C9CDDA; border-radius: 12px; padding: 28px 22px; color: #6A7083; background: #FBFBFD; line-height: 1.55; }
-.empty b { color: #1F2430; }
-.verdict { background: #FFFFFF; border: 1px solid #E3E5EC; border-left: 4px solid #4B4FC4; border-radius: 10px; padding: 16px 18px; margin-bottom: 14px; }
-.verdict.flag { border-left-color: #C2255C; }
-.v-title { font-size: 1.25rem; font-weight: 650; color: #1F2430; margin-bottom: 4px; }
-.verdict p { margin: 0 0 14px; color: #454B5E; font-size: .95rem; line-height: 1.5; }
-.meter { position: relative; height: 8px; background: #E7E9F1; border-radius: 4px; }
-.meter-fill { height: 100%; background: #4B4FC4; border-radius: 4px; }
-.verdict.flag .meter-fill { background: #C2255C; }
-.meter-tick { position: absolute; top: -5px; width: 2px; height: 18px; background: #1F2430; }
-.meter-labels { display: flex; justify-content: space-between; font-size: .82rem; color: #6A7083; margin-top: 8px; }
-.classes { background: #FFFFFF; border: 1px solid #E3E5EC; border-radius: 10px; padding: 6px 16px; margin-bottom: 14px; }
-.cls-row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #EEF0F5; font-size: .95rem; color: #1F2430; }
-.cls-row:last-child { border-bottom: none; }
-.cls-row span:last-child { font-variant-numeric: tabular-nums; color: #454B5E; }
-.caption { font-size: .85rem; color: #6A7083; line-height: 1.45; }
-.section-title { font-size: 1.25rem; font-weight: 650; color: #1F2430; margin: 34px 0 6px; }
-.results { width: 100%; border-collapse: collapse; background: #FFFFFF; border: 1px solid #E3E5EC; border-radius: 10px; overflow: hidden; font-size: .95rem; }
-.results th { text-align: left; font-weight: 600; font-size: .82rem; color: #6A7083; padding: 10px 14px; background: #FBFBFD; border-bottom: 1px solid #E3E5EC; }
-.results td { padding: 11px 14px; border-bottom: 1px solid #EEF0F5; color: #1F2430; }
+.block-container, [data-testid="stMainBlockContainer"] { max-width: 62rem; padding: 1.6rem 1.5rem 3.5rem; }
+
+.stApp a { color: var(--steel-deep); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.stApp a:hover { color: var(--ink); }
+.stApp :focus-visible { outline: 3px solid var(--ink) !important; outline-offset: 3px !important; box-shadow: 0 0 0 6px var(--sky) !important; }
+
+.stApp .bc-title, .stApp .bc-h2, .bc-brand { font-family: 'Newsreader', Georgia, 'Times New Roman', serif; color: var(--ink); font-weight: 600; letter-spacing: -.01em; }
+.topbar { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-bottom: 12px; border-bottom: 2px solid var(--sky); margin-bottom: 30px; }
+.bc-brand { font-size: 1.4rem; }
+.tag { font-size: .95rem; color: var(--steel-deep); }
+
+.hero { border-left: 6px solid var(--steel); padding: 2px 0 2px 20px; margin-bottom: 22px; }
+.stApp h1.bc-title { font-size: clamp(2.1rem, 5vw, 3.3rem); line-height: 1.1; margin: 0 0 12px; padding: 0; }
+.hero p { margin: 6px 0; max-width: 62ch; }
+.hero .lede { font-size: 1.2rem; }
+.notice { background: var(--mint); border: 2px solid var(--steel-deep); border-radius: 8px; padding: 12px 16px; margin: 0 0 30px; max-width: 70ch; }
+.notice p { margin: 4px 0; }
+
+.stApp h2.bc-h2 { font-size: 1.55rem; line-height: 1.2; margin: 0 0 10px; padding: 0; }
+.hint { font-size: .95rem; color: var(--steel-deep); margin: 8px 0 14px; }
+.empty { border: 2px dashed var(--steel-deep); border-radius: 8px; padding: 26px 22px; background: var(--mint); }
+.empty b { font-family: 'Newsreader', Georgia, serif; font-size: 1.25rem; }
+
+.verdict { display: flex; gap: 14px; align-items: flex-start; padding: 14px 18px; border: 2px solid var(--ink); border-radius: 8px; margin-bottom: 14px; background: var(--mint); }
+.verdict svg { flex: none; width: 2.2rem; height: 2.2rem; margin-top: 2px; }
+.v-title { font-family: 'Newsreader', Georgia, serif; font-size: 1.6rem; font-weight: 600; line-height: 1.15; display: block; }
+.verdict p { margin: 4px 0 0; }
+.verdict.flag { background: var(--paper); border-color: var(--alert); border-left-width: 12px; }
+.verdict.flag .v-title { color: var(--alert); }
+
+.findings { border: 2px solid var(--sky); border-radius: 8px; padding: 6px 16px 12px; background: var(--paper); }
+.bc-row { display: grid; grid-template-columns: 6.5rem 1fr 3.6rem; gap: 12px; align-items: center; margin: 12px 0; }
+.bc-track { position: relative; height: 1.3rem; background: var(--mint); border: 1px solid var(--steel-deep); border-radius: 3px; }
+.bc-fill { height: 100%; background: var(--steel); }
+.bc-fill.hot { background: var(--alert); }
+.bc-line { position: absolute; top: -7px; bottom: -7px; width: 3px; background: var(--ink); }
+.bc-num { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.caption { font-size: .95rem; color: var(--steel-deep); line-height: 1.5; margin: 6px 0 0; }
+
+.section { margin-top: 40px; }
+.results { width: 100%; border-collapse: collapse; border: 2px solid var(--steel-deep); font-size: 1rem; background: var(--paper); }
+.results caption { text-align: left; padding: 0 0 8px; color: var(--steel-deep); font-size: .95rem; caption-side: bottom; }
+.results th { text-align: left; font-weight: 700; padding: 10px 14px; background: var(--sky); color: var(--ink); border-bottom: 2px solid var(--steel-deep); }
+.results td { padding: 11px 14px; border-bottom: 1px solid var(--sky); }
 .results tr:last-child td { border-bottom: none; }
-.results td:not(:first-child), .results th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; width: 24%; }
-.small { font-size: .88rem; color: #6A7083; line-height: 1.55; }
-.small a, .footer a { color: #4B4FC4; }
-.footer { margin-top: 38px; padding-top: 16px; border-top: 1px solid #E3E5EC; font-size: .85rem; color: #6A7083; line-height: 1.6; }
-@media (max-width: 1024px) { .block-container, [data-testid="stMainBlockContainer"] { padding: 1.3rem 1.2rem 2.5rem; } .page-title { font-size: 1.75rem; } }
+.results td:not(:first-child), .results th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; width: 22%; }
+.results tr.base td { background: var(--mint); }
+
+.limits { background: var(--sky); border-radius: 8px; padding: 14px 18px; margin: 24px 0 0; max-width: 78ch; }
+.limits h3 { font-family: 'Newsreader', Georgia, serif; font-size: 1.3rem; margin: 0 0 6px; padding: 0; color: var(--ink); }
+.limits p { margin: 6px 0; }
+.footer { margin-top: 40px; padding-top: 16px; border-top: 2px solid var(--sky); font-size: .95rem; line-height: 1.65; max-width: 80ch; }
+
+/* Streamlit widgets */
+[data-testid="stFileUploaderDropzone"] { background: var(--mint); border: 2px dashed var(--steel-deep); border-radius: 8px; color: var(--ink); }
+[data-testid="stFileUploaderDropzone"] small, [data-testid="stFileUploaderDropzone"] span { color: var(--ink); }
+[data-testid="stWidgetLabel"] p { font-weight: 700; color: var(--ink); }
+.stButton > button, [data-testid="stFileUploaderDropzone"] button { min-height: 2.75rem; border-radius: 6px; border: 2px solid var(--steel-deep); background: var(--steel-deep); color: #FFFFFF; font-weight: 700; }
+.stButton > button:hover, [data-testid="stFileUploaderDropzone"] button:hover { background: var(--ink); border-color: var(--ink); color: #FFFFFF; }
+[data-testid="stExpander"] { border: 2px solid var(--sky); border-radius: 8px; background: transparent; }
+[data-testid="stImage"] img { border: 2px solid var(--ink); border-radius: 4px; }
+[data-testid="stImageCaption"] { color: var(--ink); font-size: .95rem; }
+
 @media (max-width: 640px) {
-  .block-container, [data-testid="stMainBlockContainer"] { padding: 1rem .9rem 2rem; }
-  .topbar { flex-direction: column; gap: 2px; margin-bottom: 20px; }
-  .page-title { font-size: 1.45rem; } .lede { font-size: 1rem; }
-  .verdict { padding: 14px; } .v-title { font-size: 1.15rem; }
-  .results { font-size: .85rem; } .results th, .results td { padding: 9px 8px; } .results td:not(:first-child), .results th:not(:first-child) { width: 25%; }
+  .block-container, [data-testid="stMainBlockContainer"] { padding: 1rem .9rem 2.5rem; }
+  .topbar { flex-direction: column; gap: 2px; }
+  .bc-row { grid-template-columns: 5.2rem 1fr 3.4rem; gap: 8px; }
+  .results { font-size: .9rem; } .results th, .results td { padding: 9px 8px; }
 }
+@media (prefers-reduced-motion: reduce) { .stApp * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 """
 
 def _clean(html):
     # Streamlit's markdown breaks on blank or indented lines inside HTML, so squash them
     return " ".join(line.strip() for line in html.splitlines() if line.strip())
 
-TOPBAR_HTML = '<div class="topbar"><span class="brand">BleedCheck CT</span><span class="tag">Research prototype, built for the Veritas AI Hackathon 2026</span></div>'
+CHECK_SVG = ('<svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle cx="16" cy="16" r="14" fill="none" stroke="#12283A" stroke-width="2.5"/>'
+             '<path d="M9 16.5l5 5 9-11" fill="none" stroke="#12283A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>')
+FLAG_SVG = ('<svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M16 3L30 28H2z" fill="#CC0000"/>'
+            '<path d="M16 12v8" stroke="#FFFFF0" stroke-width="3" stroke-linecap="round"/><circle cx="16" cy="24" r="1.8" fill="#FFFFF0"/></svg>')
+
+TOPBAR_HTML = '<div class="topbar"><span class="bc-brand">BleedCheck CT</span><span class="tag">A student prototype for the Veritas AI Hackathon 2026</span></div>'
 
 INTRO_HTML = """
-<h1 class="page-title">Check a head CT slice for a possible brain bleed</h1>
-<p class="lede">Upload one axial head CT image, or pick a public example. The model gives a bleed score and a heatmap of what pushed that score.
-It is a student project to study how such models behave on new data, not a diagnostic tool.</p>
-<div class="notice"><b>This project is a prototype and is not medical advice.</b> Please do not upload a real patient's scan. Images are processed in memory and are not stored.</div>
+<div class="hero">
+<h1 class="bc-title">A second look at head CT scans</h1>
+<p class="lede">Upload one head CT slice. BleedCheck estimates the chance of a brain bleed and shows what drove that estimate, so an emergency doctor can decide which scans to open first.</p>
+<p>We built it for the doctor on a night shift with no radiologist in the building. In our tests it caught 91 of every 100 bleeds, and it missed about 1 in 11.</p>
+</div>
+<div class="notice">
+<p><b>This project is a prototype and is not medical advice.</b></p>
+<p>Please do not upload a real patient's scan. The app processes images in memory and does not store them.</p>
+</div>
 """
 
 EMPTY_HTML = """
-<div class="empty"><b>No scan selected yet.</b><br>Upload an image on the left, or choose one of the public examples.
-The result and the heatmap will appear here.</div>
+<div class="empty"><b>No scan selected yet.</b><br>Upload an image on the left, or choose a public example. The result and the heatmap appear here.</div>
 """
 
 def verdict_html(p, thr):
     flagged = p >= thr
-    cls = "flag" if flagged else "clear"
-    title = "Possible bleed flagged" if flagged else "No bleed flagged"
-    text = ("The model's bleed score is above the threshold. Treat this as a reason for a closer look, not as a diagnosis."
-            if flagged else "The model's bleed score is below the threshold. This does not rule out a bleed.")
-    return _clean(f"""
-    <div class="verdict {cls}"><div class="v-title">{title}</div><p>{text}</p>
-    <div class="meter"><div class="meter-fill" style="width:{min(max(p, 0), 1) * 100:.1f}%"></div><div class="meter-tick" style="left:{thr * 100:.1f}%"></div></div>
-    <div class="meter-labels"><span>Bleed score {p:.2f}</span><span>Threshold {thr:.2f}</span></div></div>""")
+    cls, icon = ("flag", FLAG_SVG) if flagged else ("clear", CHECK_SVG)
+    title = "Possible bleed" if flagged else "No bleed flagged"
+    text = ("The bleeding probability is at or above the alert line. Treat this as a reason to open the scan first, not as a diagnosis."
+            if flagged else "The bleeding probability is below the alert line. This does not rule out a bleed.")
+    return _clean(f"""<div class="verdict {cls}" role="status" aria-live="polite">{icon}
+    <div><span class="v-title">{title}</span><p>{text}</p></div></div>""")
 
-def classes_html(probs):
-    rows = "".join(f'<div class="cls-row"><span>{n}</span><span>{v * 100:.0f}%</span></div>' for n, v in zip(CLASSES, probs))
-    return _clean(f'<div class="classes">{rows}</div>')
+def findings_html(probs, thr):
+    rows = []
+    for i in SHOW_ORDER:
+        name, pct = CLASSES[i], min(max(probs[i], 0.0), 1.0) * 100
+        is_bleed = i == 1
+        hot = " hot" if is_bleed and probs[i] >= thr else ""
+        line = f'<span class="bc-line" style="left:{thr * 100:.0f}%"></span>' if is_bleed else ""
+        rows.append(f'<div class="bc-row"><span>{name}</span><div class="bc-track" role="img" aria-label="{name}: {pct:.0f} percent">'
+                    f'<div class="bc-fill{hot}" style="width:{pct:.1f}%"></div>{line}</div><span class="bc-num">{pct:.0f}%</span></div>')
+    note = f'<p class="caption">The black line is the alert line. A bleeding probability of {thr * 100:.0f}% or higher raises the flag.</p>'
+    return _clean(f'<div class="findings">{"".join(rows)}{note}</div>')
 
 def results_html(rows):
-    body = "".join(f"<tr><td>{a}</td><td>{b}</td><td>{c}</td></tr>" for a, b, c in rows)
-    return _clean(f'<table class="results"><tr><th>Test</th><th>Bleeds caught</th><th>False alarms</th></tr>{body}</table>')
+    body = ""
+    for n, (a, b, c) in enumerate(rows):
+        tr = '<tr class="base">' if n == 0 else "<tr>"
+        body += f"{tr}<td>{a}</td><td>{b}</td><td>{c}</td></tr>"
+    return _clean(f'<table class="results"><caption>A false alarm is a normal scan that the model flagged as a possible bleed.</caption>'
+                  f'<tr><th scope="col">Test</th><th scope="col">Bleeds caught</th><th scope="col">False alarms</th></tr>{body}</table>')
 
 LIMITS_HTML = """
-<p class="small"><b>What to keep in mind.</b>
-In our tests the model missed roughly 1 in 11 bleeds, even on data like its training data.
-On scans from a different public source it wrongly flagged 10 to 20% of normal scans, and a few labelled scans from the new source brought that down a lot.
-The heatmap shows what drove the score, not where a bleed is: it often highlights the skull edge or the scan background.
-The figures come from small public data sets (no patient IDs, one extra source of 200 scans), so treat them as a study, not a guarantee.</p>
+<aside class="limits"><h3>Read the limits before you trust a result</h3>
+<p>On scans like its training data, the model missed about 1 in 11 bleeds.</p>
+<p>On scans from a different public source, it wrongly flagged 10 to 20% of normal scans. A few labelled scans from the new source brought that down a lot.</p>
+<p>The heatmap shows what drove the score, not where a bleed is. It often lights up the skull edge or the scan background.</p>
+<p>Our data sets are small and public: they have no patient IDs, and the extra source holds only 200 scans. Treat the numbers as a study, not a guarantee.</p></aside>
 """
 
 FOOTER_HTML = f"""
 <div class="footer"><b>This project is a prototype and is not medical advice.</b><br>
 Made by Aarish Asif Khan and Aabir Asif Khan, Islamabad. Code and notebook: <a href="{REPO_URL}">GitHub</a>.<br>
-Trained on the Brain Stroke CT Dataset (a copy of the TEKNOFEST-2021 stroke data set, Republic of Türkiye Ministry of Health; Koç et al., Eurasian J Med 2022).
-Tested on Head CT - hemorrhage by Felipe Kitamura (CC0). The example scans come from the CC0 set. Built with PyTorch, torchvision and Streamlit.</div>
+We trained on the Brain Stroke CT Dataset, a copy of the TEKNOFEST-2021 stroke data set from the Republic of Türkiye Ministry of Health (Koç et al., Eurasian J Med 2022).
+We tested on Head CT - hemorrhage by Felipe Kitamura (CC0). The example scans come from the CC0 set. We built the app with PyTorch, torchvision and Streamlit.</div>
 """
 
 # ------------------------------------------------------------------ the model
 MEAN, STD = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
 TF = T.Compose([T.Resize((224, 224)), T.ToTensor(), T.Normalize(MEAN, STD)])
 LOCK = threading.Lock()      # the cached model is shared, so run one analysis at a time
+MINT = np.array([0.80, 0.93, 0.90], dtype=np.float32)
 
 @st.cache_resource(show_spinner="Loading the model (first visit only)...")
 def load_model():
@@ -148,13 +201,6 @@ def load_model():
     m.fc = nn.Linear(m.fc.in_features, 3)
     m.load_state_dict(torch.load(WEIGHTS, map_location="cpu"))
     return m.eval()
-
-def jet(x):
-    # a small stand-in for matplotlib's "jet" colour map
-    r = np.clip(1.5 - np.abs(4 * x - 3), 0, 1)
-    g = np.clip(1.5 - np.abs(4 * x - 2), 0, 1)
-    b = np.clip(1.5 - np.abs(4 * x - 1), 0, 1)
-    return np.stack([r, g, b], -1)
 
 def gradcam(model, x, class_idx=1):
     feats, grads = [], []
@@ -181,7 +227,10 @@ def analyse(data: bytes):
         cam, p = gradcam(model, x)
     grey = np.asarray(img.convert("L").resize((448, 448)), dtype=np.float32) / 255
     cam_big = np.asarray(Image.fromarray((cam * 255).astype("uint8")).resize((448, 448)), dtype=np.float32) / 255
-    over = (0.6 * np.stack([grey] * 3, -1) + 0.4 * jet(cam_big)).clip(0, 1)
+    # One-colour glow instead of a rainbow map: brighter mint means a stronger push towards "bleed".
+    # It stays readable for colour-blind viewers and keeps red reserved for the alert.
+    glow = (cam_big ** 1.5)[..., None] * MINT * 0.9
+    over = (0.55 * np.stack([grey] * 3, -1) + glow).clip(0, 1)
     return [float(v) for v in p], (grey * 255).astype("uint8"), (over * 255).astype("uint8")
 
 # ------------------------------------------------------------------ the page
@@ -199,13 +248,13 @@ if EXAMPLES.is_dir():
 left, right = st.columns(2, gap="large")
 
 with left:
-    st.markdown('<div class="step">1. Choose a scan</div>', unsafe_allow_html=True)
+    st.markdown('<h2 class="bc-h2">1. Choose a scan</h2>', unsafe_allow_html=True)
     upload = st.file_uploader("Upload a head CT slice", type=["png", "jpg", "jpeg"], label_visibility="collapsed")
-    st.markdown('<p class="hint">One axial head CT slice as a PNG or JPG. Other kinds of images give meaningless scores.</p>', unsafe_allow_html=True)
+    st.markdown('<p class="hint">Use one axial head CT slice as a PNG or JPG. Other kinds of images give meaningless scores.</p>', unsafe_allow_html=True)
     choice = st.selectbox("Or try a public example", ["None"] + list(examples)) if examples else "None"
     with st.expander("Settings"):
-        thr = st.slider("Flag threshold", 0.05, 0.95, 0.50, 0.05,
-                        help="A scan is flagged when its bleed score is at or above this value. Lower flags more scans. 0.50 is the setting we tested.")
+        thr = st.slider("Alert line", 0.05, 0.95, 0.50, 0.05,
+                        help="The tool flags a scan when its bleeding probability is at or above this value. A lower line flags more scans. 0.50 is the setting we tested.")
 
 data, source = None, ""
 if upload is not None:
@@ -215,30 +264,30 @@ elif choice != "None":
 
 result = None
 with right:
-    st.markdown('<div class="step">2. Result</div>', unsafe_allow_html=True)
+    st.markdown('<h2 class="bc-h2">2. Read the result</h2>', unsafe_allow_html=True)
     if data is None:
         st.markdown(_clean(EMPTY_HTML), unsafe_allow_html=True)
     else:
         try:
             probs, scan, over = analyse(data)
         except Exception:
-            st.error("That file could not be read as an image. Please try a PNG or JPG.")
+            st.error("The app could not read that file as an image. Please try a PNG or JPG.")
         else:
             result = (probs, scan, over)
             st.markdown(verdict_html(probs[1], thr), unsafe_allow_html=True)
-            st.markdown(classes_html(probs), unsafe_allow_html=True)
+            st.markdown(findings_html(probs, thr), unsafe_allow_html=True)
 
 if result is not None:
-    st.markdown('<div class="section-title">Scan and heatmap</div>', unsafe_allow_html=True)
+    probs, scan, over = result
+    st.markdown('<div class="section"><h2 class="bc-h2">Scan and heatmap</h2></div>', unsafe_allow_html=True)
     a, b = st.columns(2, gap="large")
     with a:
-        st.image(scan, caption=source)
+        st.image(scan, caption=f"{source}: the scan as the model received it.")
     with b:
-        st.image(over, caption="Where the model looked (Grad-CAM). Red and yellow pushed the score towards bleed.")
+        st.image(over, caption="Heatmap (Grad-CAM). Brighter mint marks areas that pushed the score towards bleed.")
     st.markdown('<p class="caption">The heatmap shows what drove the score. It does not show where a bleed is.</p>', unsafe_allow_html=True)
 
-st.markdown('<div class="section-title">How it did in our tests</div>', unsafe_allow_html=True)
+st.markdown('<div class="section"><h2 class="bc-h2">How it did in our tests</h2></div>', unsafe_allow_html=True)
 st.markdown(results_html(RESULTS_ROWS), unsafe_allow_html=True)
-st.markdown('<p class="caption" style="margin-top:8px">A false alarm is a normal scan that the model flagged as a possible bleed.</p>', unsafe_allow_html=True)
 st.markdown(_clean(LIMITS_HTML), unsafe_allow_html=True)
 st.markdown(_clean(FOOTER_HTML), unsafe_allow_html=True)
