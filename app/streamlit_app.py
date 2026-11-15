@@ -39,7 +39,7 @@ SHOW_ORDER = [1, 2, 0]                    # show Bleeding first, then Ischemia, 
 st.set_page_config(page_title="BleedCheck CT", layout="wide", initial_sidebar_state="collapsed")
 
 # ------------------------------------------------------------------ look and feel
-# Cream paper, steel blue, neon pink and cyan accents, and red.
+# Cream paper, steel blue, neon pink and yellow accents, and red.
 # Red means one thing: "possible bleed".
 CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap');
@@ -134,83 +134,78 @@ html, body, [data-testid="stAppViewContainer"], .stApp { background: var(--paper
 }
 @media (prefers-reduced-motion: reduce) { .stApp * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 
-/* ================= NEON LAYER ================= */
-:root { --pink:#FF2E9A; --cyan:#19E3FF; --violet:#8A5CFF; }
+/* ================= NEON YELLOW + PINK, ONLY IN A FEW PLACES ================= */
+:root { --pink:#FF2E9A; --yellow:#F5FF1F; }
+@property --a { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
 
-/* --- Neon ring and aura around the brain (turns red when a bleed is flagged) --- */
-.gantry:not(.flag) {
-  border-color: var(--pink);
-  background: radial-gradient(circle, rgba(255,46,154,.16) 0%, rgba(25,227,255,.10) 55%, transparent 72%);
-  animation: ringPulse 5s ease-in-out infinite;
-}
-.gantry:not(.flag)::before { border-color: var(--cyan); animation: spinRev 50s linear infinite; }
-.gantry:not(.flag)::after {
-  background: repeating-conic-gradient(var(--pink) 0deg .7deg, transparent .7deg 3.75deg, var(--cyan) 3.75deg 4.45deg, transparent 4.45deg 7.5deg);
-  filter: drop-shadow(0 0 4px var(--pink)) drop-shadow(0 0 8px var(--cyan));
-  animation: spin 40s linear infinite;
-}
-.gantry.flag { animation: alertPulse 1.6s ease-in-out infinite; }
-.brain-art { animation: brainGlow 5s ease-in-out infinite; }
-
+@keyframes slide   { from { background-position: 0% 50%; } to { background-position: 200% 50%; } }
 @keyframes spin    { to { transform: rotate(360deg); } }
 @keyframes spinRev { to { transform: rotate(-360deg); } }
-@keyframes ringPulse {
-  0%,100% { box-shadow: 0 0 10px 1px var(--pink), 0 0 26px 4px rgba(255,46,154,.45), inset 0 0 18px rgba(255,46,154,.35); border-color: var(--pink); }
-  50%     { box-shadow: 0 0 10px 1px var(--cyan), 0 0 30px 6px rgba(25,227,255,.45), inset 0 0 22px rgba(25,227,255,.35); border-color: var(--cyan); }
+@keyframes turn    { to { --a: 360deg; } }
+/* The glow travels down the page: each gradient strip lights up in turn (9s cycle) */
+@keyframes lightUp {
+  0%, 22%, 100% { box-shadow: 0 0 0 0 rgba(255,46,154,0); }
+  8%, 14% { box-shadow: 0 0 10px 2px rgba(255,46,154,.85), 0 0 22px 5px rgba(245,255,31,.6); }
 }
-@keyframes alertPulse {
-  0%,100% { box-shadow: 0 0 10px 1px var(--alert), 0 0 24px 4px rgba(204,0,0,.4); }
-  50%     { box-shadow: 0 0 16px 3px var(--alert), 0 0 40px 10px rgba(204,0,0,.5); }
-}
-@keyframes brainGlow {
-  0%,100% { filter: drop-shadow(0 0 6px var(--pink)) drop-shadow(0 0 18px rgba(255,46,154,.6)); }
-  50%     { filter: drop-shadow(0 0 6px var(--cyan)) drop-shadow(0 0 18px rgba(138,92,255,.6)); }
+@keyframes lightUpBox {
+  0%, 22%, 100% { box-shadow: 0 0 0 0 rgba(255,46,154,0); }
+  8%, 14% { box-shadow: 0 0 16px 3px rgba(255,46,154,.7), 0 0 34px 8px rgba(245,255,31,.45); }
 }
 
-/* --- A light that travels down the page: top bar, then each section lights up in turn --- */
-.topbar { border-bottom: 3px solid transparent; border-image: linear-gradient(90deg, var(--steel), var(--pink), var(--cyan), var(--violet), var(--steel)) 1; border-image-slice: 1; }
-.topbar { background: linear-gradient(90deg, transparent, rgba(255,46,154,.10), rgba(25,227,255,.10), transparent) 0 100% / 300% 3px no-repeat; animation: sweep 6s linear infinite; }
-@keyframes sweep { from { background-position: 200% 100%; } to { background-position: -100% 100%; } }
-
-.hero, .notice, .findings, .verdict, .results, .limits, .empty { transition: box-shadow .25s ease, transform .25s ease, border-color .25s ease; }
-.hero    { animation: hop 18s ease-in-out infinite 0s; }
-.notice  { animation: hop 18s ease-in-out infinite 3s; }
-.verdict, .empty { animation: hop 18s ease-in-out infinite 6s; }
-.findings { animation: hop 18s ease-in-out infinite 9s; }
-.results { animation: hop 18s ease-in-out infinite 12s; }
-.limits  { animation: hop 18s ease-in-out infinite 15s; }
-@keyframes hop {
-  0%   { box-shadow: 0 0 0 0 rgba(255,46,154,0); }
-  4%, 14% { box-shadow: 0 0 12px 2px rgba(255,46,154,.75), 0 0 30px 6px rgba(25,227,255,.45); }
-  18%, 100% { box-shadow: 0 0 0 0 rgba(255,46,154,0); }
+/* --- Brain: pink aura, gradient ring that turns, ticks in pink and yellow --- */
+.gantry:not(.flag) {
+  border-color: transparent;
+  background:
+    radial-gradient(circle, rgba(255,46,154,.20) 0%, rgba(255,46,154,.08) 55%, transparent 72%) padding-box,
+    linear-gradient(var(--paper), var(--paper)) padding-box,
+    conic-gradient(from var(--a), var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)) border-box;
+  box-shadow: 0 0 22px 3px rgba(255,46,154,.45), 0 0 46px 8px rgba(245,255,31,.25);
+  animation: turn 9s linear infinite;
 }
-
-/* --- Hover effects --- */
-.hero:hover, .notice:hover, .findings:hover, .empty:hover, .limits:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 0 14px 2px var(--pink), 0 0 34px 8px rgba(25,227,255,.45);
-  animation-play-state: paused;
+.gantry:not(.flag)::before { border-color: var(--pink); }
+.gantry:not(.flag)::after {
+  background: repeating-conic-gradient(var(--pink) 0deg .7deg, transparent .7deg 3.75deg, var(--yellow) 3.75deg 4.45deg, transparent 4.45deg 7.5deg);
+  animation: spin 40s linear infinite;
 }
-.verdict:not(.flag):hover { transform: translateY(-3px); box-shadow: 0 0 14px 2px var(--cyan), 0 0 34px 8px rgba(138,92,255,.4); }
-.verdict.flag:hover { transform: translateY(-3px); box-shadow: 0 0 16px 3px var(--alert), 0 0 38px 10px rgba(204,0,0,.45); }
-.results tr:hover td { background: rgba(255,46,154,.10); box-shadow: inset 0 0 10px rgba(25,227,255,.5); }
-.bc-row:hover .bc-track { box-shadow: 0 0 10px var(--cyan), 0 0 22px rgba(255,46,154,.5); }
-.bc-brand { transition: text-shadow .25s ease; }
-.bc-brand:hover { text-shadow: 0 0 8px var(--pink), 0 0 18px var(--cyan); }
-.stApp .bc-h2 { transition: text-shadow .25s ease; }
-.stApp .bc-h2:hover { text-shadow: 0 0 6px rgba(255,46,154,.7), 0 0 16px rgba(25,227,255,.6); }
-[data-testid="stImage"] img { transition: box-shadow .25s ease, transform .25s ease; }
-[data-testid="stImage"] img:hover { transform: scale(1.015); box-shadow: 0 0 14px 2px var(--pink), 0 0 30px 6px rgba(25,227,255,.5); }
-.stButton > button, [data-testid="stFileUploaderDropzone"] button { transition: box-shadow .2s ease, transform .2s ease, background .2s ease; }
-.stButton > button:hover, [data-testid="stFileUploaderDropzone"] button:hover { transform: translateY(-2px); box-shadow: 0 0 12px var(--pink), 0 0 26px rgba(25,227,255,.6); }
-[data-testid="stFileUploaderDropzone"], [data-testid="stExpander"], [data-baseweb="select"] > div { transition: box-shadow .25s ease, border-color .25s ease; }
-[data-testid="stFileUploaderDropzone"]:hover, [data-testid="stExpander"]:hover, [data-baseweb="select"] > div:hover {
-  border-color: var(--pink); box-shadow: 0 0 12px var(--pink), 0 0 26px rgba(25,227,255,.45);
-}
+.gantry.flag { box-shadow: 0 0 18px 3px rgba(204,0,0,.45); }
+.brain-art { filter: drop-shadow(0 0 10px rgba(255,46,154,.65)); }
 
-/* Motion off for anyone who asks for it (the pseudo-elements need their own rule) */
+/* --- Top bar: gradient line that slides --- */
+.topbar { position: relative; border-bottom: none; }
+.topbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)); background-size: 200% 100%;
+  animation: slide 5s linear infinite, lightUp 9s ease-in-out infinite 0s; }
+
+/* --- Title bar: gradient strip beside the intro --- */
+.hero { position: relative; border-left: none; padding-left: 26px; }
+.hero::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; border-radius: 3px;
+  background: linear-gradient(180deg, var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)); background-size: 100% 200%;
+  animation: slideV 5s linear infinite, lightUp 9s ease-in-out infinite 1.5s; }
+@keyframes slideV { from { background-position: 50% 0%; } to { background-position: 50% 200%; } }
+
+/* --- Heading underlines --- */
+.stApp h2.bc-h2::after { content: ""; display: block; width: 3.6rem; height: 4px; margin-top: 7px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)); background-size: 200% 100%;
+  animation: slide 5s linear infinite, lightUp 9s ease-in-out infinite 3s; }
+
+/* --- Limits box: moving gradient border, gradient title --- */
+.limits { border: 3px solid transparent;
+  background: linear-gradient(var(--ink), var(--ink)) padding-box, linear-gradient(110deg, var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)) border-box;
+  background-size: 100% 100%, 300% 100%;
+  animation: slide2 6s linear infinite, lightUpBox 9s ease-in-out infinite 4.5s; }
+@keyframes slide2 { from { background-position: 0 0, 0% 50%; } to { background-position: 0 0, 300% 50%; } }
+.limits h3 { background: linear-gradient(90deg, var(--pink), var(--yellow), var(--pink)); background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; display: inline-block;
+  animation: slide 6s linear infinite; }
+
+/* --- Footer line --- */
+.footer { position: relative; border-top: none; }
+.footer::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)); background-size: 200% 100%;
+  animation: slide 5s linear infinite, lightUp 9s ease-in-out infinite 6s; }
+
 @media (prefers-reduced-motion: reduce) {
-  .stApp *, .gantry::before, .gantry::after { animation: none !important; transition: none !important; }
+  .stApp *, .stApp *::before, .stApp *::after { animation: none !important; transition: none !important; }
 }
 """
 
