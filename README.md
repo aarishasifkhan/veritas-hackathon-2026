@@ -81,4 +81,4 @@ With about 100 local scans, false alarms on the new source fell from 20% to abou
 - Brain Stroke CT Dataset (copy of the TEKNOFEST-2021 data): Koç U, Akçapınar Sezer E, Alper Özkaya Y, et al. *Eurasian J Med.* 2022;54(3):248-258. https://www.kaggle.com/datasets/ozguraslank/brain-stroke-ct-dataset. Rights: Republic of Türkiye Ministry of Health.
 - Kitamura, F. C. (2018). Head CT - hemorrhage (CC0). https://doi.org/10.34740/KAGGLE/DSV/152137
 - Tools: [PyTorch and torchvision](https://pytorch.org) (ResNet18), [scikit-learn](https://scikit-learn.org), [pandas](https://pandas.pydata.org), [Kaggle Notebooks](https://www.kaggle.com/code), [Streamlit](https://streamlit.io) and Streamlit Community Cloud (demo app).
-- AI tools used: [Claude](https://claude.ai), [ChatGPT](https://chatgpt.com), [GitHub Copilot](https://github.com/features/copilot). We read, tested and can explain all code we used.
+- AI tools used: [Claude](https://claude.ai), and [ChatGPT](https://chatgpt.com). We read, tested and can explain all code we used.
