@@ -73,15 +73,8 @@ html, body, [data-testid="stAppViewContainer"], .stApp { background: var(--paper
 /* The brain sits inside a CT-scanner ring. The ring turns red when the tool flags a scan. */
 .stage { margin: 0; padding: 22px 0 0; text-align: center; }
 .gantry { position: relative; width: min(88%, 24rem); aspect-ratio: 1 / 1; margin: 0 auto; border-radius: 50%; border: 6px solid var(--steel); display: grid; place-items: center; }
-.gantry::before { content: ""; position: absolute; inset: 14px; border-radius: 50%; border: 2px dashed var(--steel); }
-.gantry::after { content: ""; position: absolute; inset: -20px; border-radius: 50%;
-  background: repeating-conic-gradient(var(--steel) 0deg .7deg, transparent .7deg 7.5deg);
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 13px), #000 calc(100% - 12px));
-          mask: radial-gradient(farthest-side, transparent calc(100% - 13px), #000 calc(100% - 12px)); }
 .brain-art { width: 82%; aspect-ratio: 640 / 531; background-repeat: no-repeat; background-position: center; background-size: contain; position: relative; z-index: 1; }
 .gantry.flag { border-color: var(--alert); }
-.gantry.flag::before { border-color: var(--alert); }
-.gantry.flag::after { background: repeating-conic-gradient(var(--alert) 0deg .7deg, transparent .7deg 7.5deg); }
 .stage figcaption { font-size: .92rem; margin-top: 34px; max-width: 30ch; margin-left: auto; margin-right: auto; }
 
 .verdict { display: flex; gap: 14px; align-items: flex-start; padding: 14px 18px; border: 2px solid var(--steel); border-left-width: 12px; border-radius: 8px; margin-bottom: 14px; }
@@ -139,8 +132,6 @@ html, body, [data-testid="stAppViewContainer"], .stApp { background: var(--paper
 @property --a { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
 
 @keyframes slide   { from { background-position: 0% 50%; } to { background-position: 200% 50%; } }
-@keyframes spin    { to { transform: rotate(360deg); } }
-@keyframes spinRev { to { transform: rotate(-360deg); } }
 @keyframes turn    { to { --a: 360deg; } }
 /* The glow travels down the page: each gradient strip lights up in turn (9s cycle) */
 @keyframes lightUp {
@@ -161,11 +152,6 @@ html, body, [data-testid="stAppViewContainer"], .stApp { background: var(--paper
     conic-gradient(from var(--a), var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)) border-box;
   box-shadow: 0 0 22px 3px rgba(255,46,154,.45), 0 0 46px 8px rgba(245,255,31,.25);
   animation: turn 9s linear infinite;
-}
-.gantry:not(.flag)::before { border-color: var(--pink); }
-.gantry:not(.flag)::after {
-  background: repeating-conic-gradient(var(--pink) 0deg .7deg, transparent .7deg 3.75deg, var(--yellow) 3.75deg 4.45deg, transparent 4.45deg 7.5deg);
-  animation: spin 40s linear infinite;
 }
 .gantry.flag { box-shadow: 0 0 18px 3px rgba(204,0,0,.45); }
 .brain-art { filter: drop-shadow(0 0 10px rgba(255,46,154,.65)); }
