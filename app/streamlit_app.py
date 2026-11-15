@@ -296,13 +296,28 @@ TF = T.Compose([T.Resize((224, 224)), T.ToTensor(), T.Normalize(MEAN, STD)])
 LOCK = threading.Lock()      # the cached model is shared, so run one analysis at a time
 CREAM = np.array([1.0, 1.0, 0.94], dtype=np.float32)
 
+def _download_weights():
+    # Download to a temporary file first, so an interrupted download never leaves a broken .pt behind
+    tmp = WEIGHTS.with_suffix(".tmp")
+    try:
+        urllib.request.urlretrieve(WEIGHTS_URL, tmp)
+        tmp.replace(WEIGHTS)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
 @st.cache_resource(show_spinner="Loading the model (first visit only)...")
 def load_model():
     if not WEIGHTS.exists():
-        urllib.request.urlretrieve(WEIGHTS_URL, WEIGHTS)
+        _download_weights()
     m = torchvision.models.resnet18(weights=None)
     m.fc = nn.Linear(m.fc.in_features, 3)
-    m.load_state_dict(torch.load(WEIGHTS, map_location="cpu"))
+    try:
+        m.load_state_dict(torch.load(WEIGHTS, map_location="cpu"))
+    except Exception:
+        # A corrupt or wrong file (for example a Git LFS pointer): delete it so the next run downloads a fresh copy
+        WEIGHTS.unlink(missing_ok=True)
+        raise
     return m.eval()
 
 def gradcam(model, x, class_idx=1):
@@ -336,6 +351,22 @@ def analyse(data: bytes):
     over = (0.55 * np.stack([grey] * 3, -1) + glow).clip(0, 1)
     return [float(v) for v in p], (grey * 255).astype("uint8"), (over * 255).astype("uint8")
 
+def check_image(data: bytes):
+    """Return None if the bytes are a readable image, otherwise (plain-English reason, the exception)."""
+    if not data:
+        return "The file is empty.", None
+    head = data[:200].lstrip().lower()
+    if head.startswith(b"version https://git-lfs"):
+        return ("This file is a Git LFS pointer, not a real image. Upload the example to GitHub again as a normal file "
+                "(not through Git LFS)."), None
+    if head.startswith((b"<!doctype", b"<html")):
+        return "This file is a saved web page with an image name, not a real image. Download the actual image file.", None
+    try:
+        Image.open(io.BytesIO(data)).verify()
+    except Exception as e:
+        return "The app could not read that file as an image. Please try a PNG or JPG.", e
+    return None
+
 # ------------------------------------------------------------------ the page
 st.markdown(f"<style>{_clean(CSS)}</style>", unsafe_allow_html=True)
 st.markdown(TOPBAR_HTML, unsafe_allow_html=True)
@@ -366,12 +397,18 @@ if upload is not None:
 elif choice != "None":
     data, source = examples[choice].read_bytes(), choice
 
-result, failed = None, False
+# Two separate steps, so the message always matches the real problem:
+#   1. is the file a readable image?   2. did the model run?
+result, problem, problem_detail = None, None, None
 if data is not None:
-    try:
-        result = analyse(data)
-    except Exception:
-        failed = True
+    bad = check_image(data)
+    if bad is not None:
+        problem, problem_detail = bad
+    else:
+        try:
+            result = analyse(data)
+        except Exception as e:
+            problem, problem_detail = "The image is fine, but the model could not run. The model weights may be missing or failed to download.", e
 
 flagged = result is not None and result[0][1] >= thr
 
@@ -380,8 +417,11 @@ with mid:
 
 with right:
     st.markdown('<h2 class="bc-h2">2. Read the result</h2>', unsafe_allow_html=True)
-    if failed:
-        st.error("The app could not read that file as an image. Please try a PNG or JPG.")
+    if problem:
+        st.error(problem)
+        if problem_detail is not None:
+            with st.expander("Technical details"):
+                st.exception(problem_detail)
     elif result is None:
         st.markdown(_clean(EMPTY_HTML), unsafe_allow_html=True)
     else:
