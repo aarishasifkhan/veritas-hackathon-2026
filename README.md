@@ -1,107 +1,81 @@
-# BleedCheck CT
+# BleedCheck CT: a second look at head CT scans
 
-**A second look at head CT scans: can a small AI model flag brain bleeds, and what happens when it meets scans from a different hospital?**
+**Track:** AI + Health
+**Team:** Aarish Asif Khan, Aabir Asif Khan
+**Live demo:** https://bleedcheck-ct.streamlit.app
+**Notebook with outputs:** https://www.kaggle.com/code/aarishasifkhan/bleedcheck-ct-a-second-look-at-head-ct-scans
 
-> **This project is a prototype and is not medical advice.** It is a student research project built over one weekend on public data. It is not a medical device and has not been tested on patients.
-
-Veritas AI International High School Hackathon 2026, Health track.
-Team: **Aarish Asif Khan** and **Aabir Asif Khan** (Islamabad, Pakistan).
-
-| | |
-|---|---|
-| Live demo | https://bleedcheck-ct.streamlit.app/ |
-| Notebook | https://www.kaggle.com/code/aarishasifkhan/bleedcheck-ct-a-second-look-at-head-ct-scans/ |
-| Video | [FILL: video link] |
-| Code and logs | this repository (`notebooks/`, `app/`, `docs/`) |
+> This project is a prototype and is not medical advice.
 
 ## The problem
-A brain bleed is a medical emergency, and doctors look for it on a head CT scan. When many scans need reading, a tool that points to the scans that deserve a closer look first could help.
 
-But a model that looks excellent on the data it was built on can behave very differently at another hospital, where scanners and settings are different. Most demos report a single accuracy number from one source and never test this.
-
-We care about this personally: our father fell seriously ill in 2019, and it made us want to build something in health. [EDIT this sentence so it says exactly what you want to share.]
-
-## Our question
-> **Does a bleed-detection model still work on scans from a different hospital, and how many scans from that hospital does it need to adapt?**
+When a patient arrives with stroke symptoms, the emergency doctor must decide fast whether the head CT shows a **bleed** in the brain or a **blocked vessel** (ischemia). The two need very different treatment, and the wrong one can harm the patient. On night shifts and in hospitals without a radiologist, a busy emergency doctor often makes this call alone. That doctor needs the most urgent scans flagged first.
 
 ## What we built
-- A **ResNet18** (pretrained on ImageNet, fine-tuned by us) that scores a head CT slice as Normal, Bleeding or Ischemia.
-- An **honest test setup**: a second public data set stands in for "a different hospital", split into a half for choosing settings (DEV) and a half we look at once at the end (FINAL).
-- **Every recipe trained with several seeds**, because one run can mislead.
-- A **rule written before the final test** for choosing the model.
-- **Grad-CAM heatmaps** to see what drives the score, and a look at where the model fails.
-- An experiment on **how many local scans a new hospital needs** to fix the model's false alarms.
-- A **web demo** where anyone can upload a CT slice and see the score and a heatmap: [FILL: Streamlit link].
 
-## Data
-Full details and citations are in [`DATA.md`](DATA.md).
+BleedCheck CT reads one head CT slice and returns three probabilities: bleeding, ischemia and normal. It then shows one of two messages: **"Possible bleed"** (bleeding probability of 50% or higher) or **"No bleed flagged"**. The doctor uses it to choose which scans to open first. The tool does not diagnose anyone.
 
-| | Main data | Second source ("a different hospital") |
-|---|---|---|
-| Name | Brain Stroke CT Dataset (Kaggle, ozguraslank), a copy of the TEKNOFEST-2021 stroke data set | Head CT - hemorrhage (Kaggle, Felipe Kitamura) |
-| Size | 6,650 slices: 4,427 Normal, 1,093 Bleeding, 1,130 Ischemia, plus 200 held-out slices (`External_Test`) | 200 slices: 100 normal, 100 hemorrhage |
-| Licence | Rights statement from the Republic of Türkiye Ministry of Health, no standard open licence | CC0 (public domain) |
-| Our use | Train, validation and test | DEV half and FINAL half |
+## What we added
 
-There are no patient IDs, so slices from one patient may land in different splits. **Same-source scores are therefore an optimistic upper bound.** We used only public data and no real patient records.
+Our project is our own idea, related to the suggested pneumonia X-ray project. We added:
 
-## How we tested
-- "Bleed" means the Bleeding class; "no bleed" means Normal or Ischemia.
-- We report **missed bleeds** and **false alarms** separately. Accuracy alone is misleading: a model that always says "no bleed" is about 84% accurate and catches no bleeds.
-- Baselines (validation set): *always "no bleed"*: 83.6% accuracy, 0% of bleeds caught. *Logistic regression on 32×32 pixels*: 82.5% accuracy, 74.4% of bleeds caught, 132 false alarms. [CONFIRM against notebook Section 2.]
+- **Our own question.** Does the tool still work on scans from a different hospital source, and how many local scans does it need to adapt?
+- **A harder "no bleed" class.** Ischemia scans count as "no bleed", so the model must tell a bleed from a clot, not only from a healthy brain.
+- **Two kinds of error, reported separately.** We report missed bleeds and false alarms for every test set.
+- **A second data source.** We tested on 200 scans from a different publisher.
+- **A written log** of every experiment and mistake: `docs/experiment_log.md`.
+
+## How it works
+
+**Data.** We trained on the Brain Stroke CT Dataset from Kaggle, a copy of the TEKNOFEST-2021 stroke data from the Turkish Ministry of Health. It holds 6,650 anonymised head CT slices (4,427 normal, 1,093 bleeding, 1,130 ischemia). We split it 70/15/15 into 4,655 training, 997 validation and 998 test images. The data has no patient IDs, so slices from one patient can land in both training and test. Our same-source scores may therefore look better than they should. Full details are in [DATA.md](DATA.md).
+
+**Model.** We fine-tuned a ResNet18 pretrained on ImageNet to sort slices into three classes. Class weights help it learn the rarer bleeding and ischemia classes. We keep the epoch with the best validation AUC. We chose this plain ResNet18 by a rule we wrote before looking at any test set. We trained it four times with different random seeds and report the mean and the range.
 
 ## Results
-All numbers come from `notebooks/BleedCheck_CT_final.ipynb` (Section 9). They are averages over [FILL: number] training runs with different seeds, with the range in brackets.
 
-| Test | Bleeds caught | False alarms | AUC |
-|---|---|---|---|
-| Same source as the training data (test split) | [FILL] | [FILL] | [FILL] |
-| A different source (Kitamura FINAL, cut-off 0.5) | [FILL] | [FILL] | [FILL] |
-| Different source, only the cut-off moved | [FILL] | [FILL] | n/a |
-| Different source, after tuning on 100 local scans | [FILL] | [FILL] | [FILL] |
+We measure how well the model finds **bleeds** (bleeding vs. everything else).
 
-**What we found**
-1. On data like its training data the model ranks scans very well, but it still misses [FILL: about 1 in N] bleeds.
-2. On a second source it keeps catching most bleeds, **but flags many more normal scans**, and the ranking quality drops. This is dataset shift.
-3. **Our attempted fixes did not clearly help.** Augmentation and contrast stretching mostly moved the trade-off (more bleeds caught, more false alarms) instead of improving it, and the difference between seeds was as large as the difference between recipes. [CONFIRM with notebook Section 5 and the rule's choice in Section 6.]
-4. **Moving only the cut-off is not reliable** across seeds.
-5. **A small amount of local data helps a lot.** After fine-tuning on [FILL: n] scans from the new source, false alarms there went from [FILL] to [FILL]. The cost: bleeds caught on the original data changed from [FILL] to [FILL]. This is one new source and 100 test scans, so we treat it as a lead, not a guarantee.
+- **Bleeds caught** is the share of real bleeds the tool flags.
+- **False alarms** is the share of normal or ischemia scans it flags by mistake.
+- **AUC** scores how well the model ranks bleeds above non-bleeds (1.0 is perfect, 0.5 is a coin flip).
+
+**Baseline.** A "model" that always says "no bleed" scores 83.6% accuracy and catches **0%** of bleeds. Accuracy alone says little here, so we use the measures above.
+
+| Test data | Bleeds caught | False alarms | AUC |
+| --- | --- | --- | --- |
+| Same source (998 slices, 164 bleeds) | 90.9% (88.4–93.3%) | 0.7% (0.2–1.4%) | 0.995 |
+| New source: Kitamura, held-out half (50 bleeds, 50 normal), cut-off 0.5 | 91.5% (86–96%) | 15.5% (10–20%) | 0.948 |
+
+Ranges show the lowest and highest of four training runs. Same-source scores are an upper bound because of the patient-ID limit above.
 
 ## Where it fails
-- **It misses bleeds.** About [FILL: 1 in N] bleeds were missed even on data like its training data.
-- **A new hospital's scans cause false alarms.** The cut-off from one source does not carry over to another.
-- **The heatmaps do not show it finding the bleed.** For missed bleeds and false alarms, the highlighted area often sits on the skull edge, the back of the head, the head-holder, or image corners and text overlays. The model may use cues that are not the bleed. We are not radiologists and do not claim the heatmaps locate bleeds.
-- **Small tests.** One extra source with 200 scans. A difference of a few scans is noise.
 
-## What went wrong along the way
-We kept an honest record in [`docs/experiment_log.md`](docs/experiment_log.md), including mistakes: an early test run used a placeholder model before the model was chosen; our first decision rule ignored an important condition and we fixed it before the multi-seed runs; and one run flagged 59% of the new source's normal scans while a re-run flagged 16%, which is why we use several seeds.
+- **It misses about 1 in 11 bleeds,** even on data like its training data (11–19 of 164 across our four runs).
+- **False alarms rise on a new source.** At a 0.5 cut-off, 10–20% of normal scans from the new source got flagged. Changing only the cut-off did not fix it (false alarms ranged from 14% to 48%).
+- **The heatmaps do not show the model finding the bleed.** On missed bleeds, the highlighted area sits at the back of the head or on the head-holder. On some normal scans, it sits on image corners and text overlays. The model may lean on cues that are not the bleed.
+- **Our new-source test is small:** 100 scans from one publisher.
 
-## Run it yourself
-1. Open `notebooks/BleedCheck_CT_final.ipynb` on Kaggle.
-2. Add the two data sets (Brain Stroke CT Dataset by ozguraslank; Head CT - hemorrhage by Felipe Kitamura).
-3. Turn on a GPU and Internet, then **Save & Run All**. It takes about 30 minutes.
+## Our own question: how many local scans does a new hospital need?
 
-Repository layout:
-```
-README.md               this file
-DATA.md                 data sources, licences and citations
-notebooks/              our notebooks (final one: BleedCheck_CT_final.ipynb)
-docs/experiment_log.md  everything we tried, including mistakes
-app/                    the web demo (Streamlit)
-```
+We fine-tuned the model on 10, 20, 40 or 100 labelled scans from the new source, then tested on that source's other half (3 seeds each).
 
-## AI tools and credits
-**AI tools.** We used **Claude** (Anthropic) as our main AI assistant: it helped us plan the project, explained concepts, and wrote and debugged much of the code, which we ran, checked and adjusted ourselves. We used **ChatGPT** only to brainstorm project names. Its suggestions promised more than our project delivers, so we asked Claude for alternatives and chose **BleedCheck CT** ourselves. We ran every experiment and made the decisions about what to keep or drop. Some of this write-up was drafted with Claude and edited by us. No other AI tools were used.
+| Local scans | False alarms (new source) | Bleeds caught (new source) | AUC (new source) | Bleeds caught (original data) |
+| --- | --- | --- | --- | --- |
+| 0 | 20.0% | 92.0% | 0.937 | 88.4% |
+| 40 | 1.3% | 94.0% | 0.992 | 78.3% |
+| 100 | 1.3% | 95.3% | 0.997 | 86.8% |
 
-**Data.**
-- Brain Stroke CT Dataset (Kaggle, ozguraslank), a copy of the TEKNOFEST-2021 stroke data set. Koç U, Akçapınar Sezer E, Alper Özkaya Y, et al. *Eurasian J Med.* 2022;54(3):248-258.
-- Kitamura F. *Head CT - hemorrhage*, Kaggle (CC0). https://doi.org/10.34740/KAGGLE/DSV/152137
+With about 100 local scans, false alarms on the new source fell from 20% to about 1%. The same fine-tuning cost recall on the original data: it dropped to about 77% at 20–40 scans and recovered to 87% at 100. The 0-scan row uses a different half of the new source than the table above, so its numbers differ slightly. This is one new source and three seeds, so we treat the result as a lead, not a guarantee. We suggest that a hospital test the tool on its own labelled scans before relying on it.
 
-**Methods.** ResNet18 (He et al., 2016) via torchvision with ImageNet weights; Grad-CAM (Selvaraju et al., 2017); PyTorch, scikit-learn, pandas, matplotlib; demo built with Streamlit.
+## What we'd do next
 
-## Ethics and safety
-- Public data only. No real patient records, and the demo asks people not to upload any.
-- A flag means "look closer", never a diagnosis. A clear result does not rule out a bleed.
-- This is a prototype. It has not been validated clinically.
+- Use data with patient IDs, so we can split by patient and remove the leakage risk.
+- Test scans from more hospitals, and set the alert cut-off on each hospital's own scans.
+- Check performance by bleed size, patient age and sex, once the data allows it.
 
-**This project is a prototype and is not medical advice.**
+## Sources
+
+- Brain Stroke CT Dataset (copy of the TEKNOFEST-2021 data): Koç U, Akçapınar Sezer E, Alper Özkaya Y, et al. *Eurasian J Med.* 2022;54(3):248-258. https://www.kaggle.com/datasets/ozguraslank/brain-stroke-ct-dataset. Rights: Republic of Türkiye Ministry of Health.
+- Kitamura, F. C. (2018). Head CT - hemorrhage (CC0). https://doi.org/10.34740/KAGGLE/DSV/152137
+- Tools: [PyTorch and torchvision](https://pytorch.org) (ResNet18), [scikit-learn](https://scikit-learn.org), [pandas](https://pandas.pydata.org), [Kaggle Notebooks](https://www.kaggle.com/code), [Streamlit](https://streamlit.io) and Streamlit Community Cloud (demo app).
+- AI tools used: [Claude](https://claude.ai), [ChatGPT](https://chatgpt.com), [GitHub Copilot](https://github.com/features/copilot). We read, tested and can explain all code we used.
