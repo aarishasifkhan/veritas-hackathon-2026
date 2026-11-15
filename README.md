@@ -1,14 +1,14 @@
 # BleedCheck (working name): flagging brain bleeds on head CT
-**Track:** Health
+**Track:** AI + Health
 **Team:** Aarish Asif Khan, Aabir Asif Khan
 
 > This project is a prototype and is not medical advice.
 
 ## The problem
-When someone arrives at an emergency department with signs of a stroke, the doctor must quickly find out whether a head CT shows a bleed in the brain or a blocked blood vessel (ischemia), because they need different treatment. At hospitals or on night shifts without a radiologist on site, that first read can fall to a busy emergency doctor. Our user is that doctor: they need the most urgent scans flagged first. [Optional: one sentence of your own motivation.]
+When someone arrives at an emergency department with signs of a stroke, the doctor must quickly find out whether a head CT shows a bleed in the brain or a blocked/narrowed blood vessel (ischemia), because they need different treatment. At hospitals or on night shifts without a radiologist on site, that task can fall to a busy emergency doctor. Our user is that doctor, they need the most urgent scans flagged first. [Optional: one sentence of your own motivation.]
 
 ## What we built
-A model that takes one head CT slice and returns the chance that it shows a bleed (and also the chance of ischemia or a normal scan). Input: a brain CT image. Output: "possible bleed" or "no bleed" with a probability. A doctor would use it to decide which scans to open first, not to make a diagnosis.
+A model that takes one head CT slice and returns the chance that it shows a bleed (and also the chance of ischemia or a normal scan). Input a brain CT image. Output would be "possible bleed" or "no bleed" with a probability. A doctor would use it to decide which scans to open first, not to make a diagnosis.
 
 ## What we added
 Our project is our own idea, related to the suggested pneumonia X-ray project. Beyond a basic classifier we added:
