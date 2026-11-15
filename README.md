@@ -23,21 +23,40 @@ Our project is our own idea, related to the suggested pneumonia X-ray project. B
 **Model.** ResNet18 pretrained on ImageNet, fine-tuned for three classes (normal, bleeding, ischemia) with class weights for the rarer classes. We keep the epoch with the best validation AUC. "Bleed" means the bleeding probability is at least [threshold].
 
 ## Results
-Validation set (997 slices, 164 bleeds). Baselines vs. first model:
-| | Accuracy | Bleeds caught | Missed bleeds | False alarms (833 non-bleeds) |
-|---|---|---|---|---|
-| Always "no bleed" | 83.6% | 0% | 164 | 0 |
-| Pixel logistic regression | 82.5% | 74.4% | 42 | 132 |
-| ResNet18 (first model) | 97.2% | 92.7% | 12 | 16 |
 
-Tests on other data (first model):
-| Test set | Result |
-|---|---|
-| External_Test, same source (200) | caught 59 of 70 strokes, 12 false alarms on 130 normals |
-| Kitamura, different source (200) | caught 100 of 100 bleeds, but flagged 59 of 100 normal scans |
+All numbers are for finding **bleeds** (the Bleeding class vs everything else). We report missed bleeds and false alarms separately. Our final model is a plain ResNet18, chosen by a rule we wrote before looking at the test sets. We trained it four times with different seeds and report the mean and range.
+
+| Data | Bleeds caught | False alarms | AUC |
+|---|---|---|---|
+| Same-source test split (998 slices, 164 bleeds) | 90.9% (88.4–93.3%) | 0.7% (0.2–1.4%) | 0.995 |
+| New source: Kitamura, held-out half (50 bleeds, 50 normals), cut-off 0.5 | 91.5% (86–96%) | 15.5% (10–20%) | 0.948 |
+
+The always-"no bleed" baseline scores 83.6% accuracy and catches no bleeds, so accuracy alone says little here.
+Same-source scores are an upper bound: the dataset has no patient IDs, so neighbouring slices of one patient may appear in both train and test.
 
 **Where it fails.** On the new source the model catches every bleed but raises many false alarms. [Add your explanation after looking at the images.] [Add one or two example images with what the model said.]
 **After improvements:** [fill in the final table: first model vs. final model on all test sets, from the experiment log.]
+
+## Where it fails
+
+- **About 1 in 11 bleeds is missed** even on data like its training data (11–19 of 164 across our four runs).
+- **On a new source the cut-off does not transfer.** At 0.5, 10–20% of normal scans from the new source were flagged. Changing only the cut-off did not fix this (false alarms 14–48%).
+- **The heatmaps do not show it finding the bleed.** For missed bleeds, the highlighted area sits at the back of the head or on the head-holder; for some normal scans it sits on image corners and text overlays. The model may use cues that are not the bleed.
+- Our test on the new source is small (100 scans from one source).
+
+## What we added: our own question
+
+*How many labelled scans does a new hospital need before the tool works on its scans?*
+We fine-tuned our model on 10, 20, 40 or 100 labelled scans from the new source and tested on its other half (3 seeds each).
+
+| Local scans | False alarms (new source) | Bleeds caught (new source) | AUC | Bleeds caught (original data) |
+|---|---|---|---|---|
+| 0 | 20.0% | 92.0% | 0.937 | 88.4% |
+| 40 | 1.3% | 94.0% | 0.992 | 78.3% |
+| 100 | 1.3% | 95.3% | 0.997 | 86.8% |
+
+With about 100 local scans, false alarms on the new source fell from 20% to about 1%. The same fine-tuning cost recall on the original data (down to ~77% at 20–40 scans, back to 87% at 100). This is one new source and three seeds, so we treat it as a lead, not a guarantee.
+Suggested use: a hospital checks the tool on its own labelled scans before relying on it.
 
 ## What we'd do next
 - Use data with patient IDs, so we can split by patient and remove the leakage risk.
