@@ -193,6 +193,32 @@ html, body, [data-testid="stAppViewContainer"], .stApp { background: var(--paper
   background: linear-gradient(90deg, var(--pink), var(--yellow), var(--pink), var(--yellow), var(--pink)); background-size: 200% 100%;
   animation: slide 5s linear infinite, lightUp 9s ease-in-out infinite 6s; }
 
+/* ================= TINY MOTION (all switched off by prefers-reduced-motion) ================= */
+@keyframes rise  { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes grow  { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes pop   { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
+@keyframes alertPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(204,0,0,0); } 50% { box-shadow: 0 0 0 7px rgba(204,0,0,.16); } }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+.hero, .notice, .empty, .findings, .results { animation: rise .5s ease-out both; }
+.verdict { animation: rise .4s ease-out both; }
+.verdict svg { animation: pop .45s cubic-bezier(.3,1.5,.5,1) .15s both; }
+.verdict.flag { animation: rise .4s ease-out both, alertPulse 2.2s ease-in-out .6s 3; }
+.bc-fill { transform-origin: left center; animation: grow .8s cubic-bezier(.2,.8,.2,1) .1s both; }
+.brain-art { animation: float 6s ease-in-out infinite; }
+
+.loading { aspect-ratio: 1 / 1; display: grid; place-items: center; text-align: center; padding: 12px; border: 2px dashed var(--steel); border-radius: 4px;
+  background: linear-gradient(100deg, transparent 30%, rgba(74,123,157,.18) 50%, transparent 70%); background-size: 200% 100%; animation: shimmer 1.6s linear infinite; }
+
+.stButton > button, [data-testid="stFileUploaderDropzone"] button { transition: transform .15s ease, background-color .15s ease, border-color .15s ease; }
+.stButton > button:hover, [data-testid="stFileUploaderDropzone"] button:hover { transform: translateY(-1px); }
+.stButton > button:active, [data-testid="stFileUploaderDropzone"] button:active { transform: translateY(0); }
+[data-testid="stFileUploaderDropzone"] { transition: border-color .2s ease; }
+[data-testid="stFileUploaderDropzone"]:hover { border-color: var(--ink); }
+[data-testid="stImage"] img { transition: transform .25s ease; }
+[data-testid="stImage"] img:hover { transform: scale(1.02); }
+
 @media (prefers-reduced-motion: reduce) {
   .stApp *, .stApp *::before, .stApp *::after { animation: none !important; transition: none !important; }
 }
@@ -224,6 +250,8 @@ INTRO_HTML = """
 EMPTY_HTML = """
 <div class="empty"><b>No scan selected yet.</b><br>Upload an image on the left, or choose a public example. The result and the heatmap appear here.</div>
 """
+
+LOADING_HTML = '<div class="loading" role="status">Drawing the heatmap...</div>'
 
 BRAIN_ALT = "Side view of a human brain, shaded in steel blue and cream. This is an illustration, not your scan."
 BRAIN_PATHS = [HERE / "assets" / "brain.png", HERE / "brain.png", HERE.parent / "assets" / "brain.png",
@@ -348,19 +376,31 @@ def gradcam(model, x, class_idx=1):
     return cam, out.softmax(1)[0].detach().cpu().numpy()
 
 @st.cache_data(show_spinner="Analysing the scan...", max_entries=64)
-def analyse(data: bytes):
+def predict(data: bytes):
+    """Fast part: one forward pass. This is all we need to show the verdict."""
+    model = load_model()
+    img = Image.open(io.BytesIO(data)).convert("RGB")
+    x = TF(img).unsqueeze(0)
+    with LOCK, torch.no_grad():
+        p = model(x).softmax(1)[0].cpu().numpy()
+    grey = np.asarray(img.convert("L").resize((448, 448)), dtype=np.float32) / 255
+    return [float(v) for v in p], (grey * 255).astype("uint8")
+
+@st.cache_data(show_spinner=False, max_entries=64)
+def heatmap(data: bytes):
+    """Slower part: Grad-CAM needs a backward pass, so it runs after the verdict is already on screen."""
     model = load_model()
     img = Image.open(io.BytesIO(data)).convert("RGB")
     x = TF(img).unsqueeze(0)
     with LOCK:
-        cam, p = gradcam(model, x)
+        cam, _ = gradcam(model, x)
     grey = np.asarray(img.convert("L").resize((448, 448)), dtype=np.float32) / 255
     cam_big = np.asarray(Image.fromarray((cam * 255).astype("uint8")).resize((448, 448)), dtype=np.float32) / 255
     # A one-colour glow instead of a rainbow map: brighter means a stronger push towards "bleed".
     # It stays readable for colour-blind viewers and keeps red reserved for the alert.
     glow = (cam_big ** 1.5)[..., None] * CREAM * 0.9
     over = (0.55 * np.stack([grey] * 3, -1) + glow).clip(0, 1)
-    return [float(v) for v in p], (grey * 255).astype("uint8"), (over * 255).astype("uint8")
+    return (over * 255).astype("uint8")
 
 def check_image(data: bytes):
     """Return None if the bytes are a readable image, otherwise (plain-English reason, the exception)."""
@@ -417,7 +457,7 @@ if data is not None:
         problem, problem_detail = bad
     else:
         try:
-            result = analyse(data)
+            result = predict(data)
         except Exception as e:
             problem, problem_detail = "The image is fine, but the model could not run. The model weights may be missing or failed to download.", e
 
@@ -439,17 +479,33 @@ with right:
         st.markdown(verdict_html(result[0][1], thr), unsafe_allow_html=True)
         st.markdown(findings_html(result[0], thr), unsafe_allow_html=True)
 
-if result is not None:
-    probs, scan, over = result
-    st.markdown('<div class="section"><h2 class="bc-h2">Scan and heatmap</h2></div>', unsafe_allow_html=True)
-    a, b = st.columns(2, gap="large")
-    with a:
-        st.image(scan, caption=f"{source}: the scan as the model received it.")
-    with b:
-        st.image(over, caption="Heatmap (Grad-CAM). Brighter areas pushed the score towards bleed.")
-    st.markdown('<p class="caption">The heatmap shows what drove the score. It does not show where a bleed is.</p>', unsafe_allow_html=True)
+# The scan and heatmap section is filled in at the very end, so the verdict and the rest of the page show first.
+heat_area = st.container()
 
 st.markdown('<div class="section"><h2 class="bc-h2">How it did in our tests</h2></div>', unsafe_allow_html=True)
 st.markdown(results_html(RESULTS_ROWS), unsafe_allow_html=True)
 st.markdown(_clean(LIMITS_HTML), unsafe_allow_html=True)
 st.markdown(_clean(FOOTER_HTML), unsafe_allow_html=True)
+
+# ------------------------------------------------------------------ last: heatmap (slow) and model warm-up
+if result is not None:
+    probs, scan = result
+    with heat_area:
+        st.markdown('<div class="section"><h2 class="bc-h2">Scan and heatmap</h2></div>', unsafe_allow_html=True)
+        a, b = st.columns(2, gap="large")
+        with a:
+            st.image(scan, caption=f"{source}: the scan as the model received it.")
+        with b:
+            slot = st.empty()
+            slot.markdown(LOADING_HTML, unsafe_allow_html=True)
+            try:
+                slot.image(heatmap(data), caption="Heatmap (Grad-CAM). Brighter areas pushed the score towards bleed.")
+            except Exception:
+                slot.warning("The heatmap could not be drawn. The result above is still valid.")
+        st.markdown('<p class="caption">The heatmap shows what drove the score. It does not show where a bleed is.</p>', unsafe_allow_html=True)
+elif problem is None and not st.session_state.get("_warm_failed"):
+    # No scan chosen yet: the page is already on screen, so load the model now while the visitor decides.
+    try:
+        load_model()
+    except Exception:
+        st.session_state["_warm_failed"] = True   # do not retry every rerun; a real scan will show the full error
