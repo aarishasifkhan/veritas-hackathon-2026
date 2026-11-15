@@ -1,4 +1,4 @@
-# BleedCheck (working name): flagging brain bleeds on head CT
+# BleedCheck CT | flagging brain bleeds on head CT
 **Track:** AI + Health
 **Team:** Aarish Asif Khan, Aabir Asif Khan
 
