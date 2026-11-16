@@ -59,6 +59,7 @@ Ranges show the lowest and highest of four training runs. Same-source scores are
 - **False alarms rise on a new source.** At a 0.5 cut-off, 10–20% of normal scans from the new source got flagged. Changing only the cut-off did not fix it (false alarms ranged from 14% to 48%).
 - **The heatmaps do not show the model finding the bleed.** On missed bleeds, the highlighted area sits at the back of the head or on the head-holder. On some normal scans, it sits on image corners and text overlays. The model may lean on cues that are not the bleed.
 - **Our new-source test is small:** 100 scans from one publisher.
+- Demo hosting limits. We first built the demo in Gradio for Hugging Face Spaces, but the paid hosting was out of reach for us, so we moved it to Streamlit Community Cloud. Free hosting can sleep when unused, so the first load may take a minute.
 
 ## Our own question: how many local scans does a new hospital need?
 
