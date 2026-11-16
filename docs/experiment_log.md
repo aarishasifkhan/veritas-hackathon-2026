@@ -106,3 +106,4 @@ Fine-tuned E0_plain_s3 on n labelled Kitamura-DEV scans (5 epochs, lr 1e-4), tes
 - Decision rule was incomplete (ignored same-source false alarms): amended before the seed runs.
 - Cell H run on the placeholder model: documented in section 6.
 - Single runs were misleading (59% vs 16% false alarms on the same recipe): switched to several seeds.
+- Demo hosting: we built the first demo in Gradio and planned to host it on Hugging Face Spaces. Spaces asked for a paid plan for the Gradio SDK, which we could not afford. We rebuilt the demo in Streamlit and deployed it free on Streamlit Community Cloud. The model and results did not change, only the interface.
