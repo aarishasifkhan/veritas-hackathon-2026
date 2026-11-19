@@ -23,13 +23,26 @@ WEIGHTS_VERSION = "v1"                    # the release tag holding the weights;
 WEIGHT_FILE_NAMES = ["bleedcheck_weights.pt", "bleedcheck_weights.pt.zip", "bleedcheck_weights.zip"]
 WEIGHTS_URLS = [f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/download/{WEIGHTS_VERSION}/{n}" for n in WEIGHT_FILE_NAMES]
 REPO_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}"
+NOTEBOOK_URL = "https://www.kaggle.com/code/aarishasifkhan/bleedcheck-ct-a-second-look-at-head-ct-scans"
+VIDEO_URL = "https://youtu.be/ZO6M_Wn9Gow"
 
-# Copy these from the notebook's "Summary of results" section after the final run
+# Copied from the README. Columns: test, bleeds caught, false alarms, AUC.
+# The first three rows are the mean (and range) of four training runs. The last row is the demo model alone.
 RESULTS_ROWS = [
-    ("Baseline: always say \"no bleed\"", "0%", "0%"),
-    ("Same source as the training data", "91%", "0.7%"),
-    ("A different public source", "91%", "16%"),
-    ("Different source, after tuning on 100 local scans", "95%", "1%"),
+    ("Baseline: always say \"no bleed\"", "0%", "0%", "n/a"),
+    ("Same source as the training data (998 slices, 164 bleeds)", "92.1% (82.9–97.6%)", "1.7% (0.6–2.8%)", "0.996 (0.991–0.998)"),
+    ("A different public source, cut-off 0.5 (50 bleeds, 50 normal)", "98.5% (96–100%)", "27.5% (16–48%)", "0.946 (0.893–0.985)"),
+    ("Different source, after tuning on 100 local scans (demo model only)", "96.0%", "2.0%", "0.999"),
+]
+
+# How many local scans does a new hospital need? Demo model, 3 random draws each, tested on 100 scans it never saw.
+# Columns: local scans, false alarms (new source), bleeds caught (new source), AUC (new source), bleeds caught (original data).
+TUNING_ROWS = [
+    ("0 (no tuning)", "16.0%", "100%", "0.985", "97.0%"),
+    ("10", "4.0%", "90.7%", "0.989", "88.8%"),
+    ("20", "6.0%", "95.3%", "0.988", "89.0%"),
+    ("40", "1.3%", "95.3%", "0.998", "86.4%"),
+    ("100", "2.0%", "96.0%", "0.999", "90.9%"),
 ]
 
 HERE = Path(__file__).parent
@@ -98,12 +111,17 @@ html, body, [data-testid="stAppViewContainer"], .stApp { background: var(--paper
 .caption { font-size: .95rem; line-height: 1.5; margin: 6px 0 0; }
 
 .section { margin-top: 44px; }
+.prose { max-width: 78ch; margin: 0 0 14px; }
+.prose p { margin: 6px 0; }
+.prose ul { margin: 6px 0 0 1.2rem; padding: 0; }
+.prose li { margin: 4px 0; }
 .results { width: 100%; border-collapse: collapse; border: 2px solid var(--ink); font-size: 1rem; }
 .results caption { text-align: left; padding: 0 0 8px; font-size: .95rem; caption-side: bottom; }
 .results th { text-align: left; font-weight: 700; padding: 10px 14px; background: var(--ink); color: var(--paper); }
 .results td { padding: 11px 14px; border-bottom: 1px solid var(--steel); }
 .results tr:last-child td { border-bottom: none; }
-.results td:not(:first-child), .results th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; width: 22%; }
+.results td:not(:first-child), .results th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; width: 20%; }
+.results.tune td:not(:first-child), .results.tune th:not(:first-child) { width: 17%; }
 .results tr.base td { font-style: italic; border-bottom: 2px solid var(--ink); }
 
 .limits { background: var(--ink); color: var(--paper); border-radius: 8px; padding: 16px 22px; margin: 26px 0 0; max-width: 78ch; }
@@ -127,7 +145,7 @@ html, body, [data-testid="stAppViewContainer"], .stApp { background: var(--paper
   .block-container, [data-testid="stMainBlockContainer"] { padding: 1rem .9rem 2.5rem; }
   .topbar { flex-direction: column; gap: 2px; }
   .bc-row { grid-template-columns: 5.2rem 1fr 3.4rem; gap: 8px; }
-  .results { font-size: .9rem; } .results th, .results td { padding: 9px 8px; }
+  .results { font-size: .85rem; } .results th, .results td { padding: 8px 6px; }
 }
 /* ================= NEON YELLOW + PINK, ONLY IN A FEW PLACES ================= */
 :root { --pink:#FF2E9A; --yellow:#F5FF1F; }
@@ -190,11 +208,11 @@ INTRO_HTML = """
 <div class="hero">
 <h1 class="bc-title">A second look at head CT scans</h1>
 <p class="lede">Upload one head CT slice. BleedCheck estimates the chance of a brain bleed and shows what drove that estimate, so an emergency doctor can decide which scans to open first.</p>
-<p>We built it for the doctor on a night shift with no radiologist in the building. In our tests it caught 91 of every 100 bleeds, and it missed about 1 in 11.</p>
+<p>We built it for the doctor on a night shift with no radiologist in the building. In our tests it caught 92 of every 100 bleeds, and it missed about 1 in 13.</p>
 </div>
 <div class="notice">
 <p><b>This project is a prototype and is not medical advice.</b></p>
-<p>Please do not upload a real patient's scan. The app processes images in memory and does not store them.</p>
+<p>The tool does not diagnose anyone. Please do not upload a real patient's scan. The app processes images in memory and does not store them. The free host can sleep when unused, so the first load may take a minute.</p>
 </div>
 """
 
@@ -261,27 +279,79 @@ def findings_html(probs, thr):
     note = f'<p class="caption">The black line is the alert line. A bleeding probability of {thr * 100:.0f}% or higher raises the flag.</p>'
     return _clean(f'<div class="findings">{"".join(rows)}{note}</div>')
 
-def results_html(rows):
+def table_html(caption, headers, rows, first_row_base=False, extra_class=""):
     body = ""
-    for n, (a, b, c) in enumerate(rows):
-        tr = '<tr class="base">' if n == 0 else "<tr>"
-        body += f"{tr}<td>{a}</td><td>{b}</td><td>{c}</td></tr>"
-    return _clean(f'<table class="results"><caption>A false alarm is a normal scan that the model flagged as a possible bleed.</caption>'
-                  f'<tr><th scope="col">Test</th><th scope="col">Bleeds caught</th><th scope="col">False alarms</th></tr>{body}</table>')
+    for n, row in enumerate(rows):
+        tr = '<tr class="base">' if (first_row_base and n == 0) else "<tr>"
+        body += tr + "".join(f"<td>{c}</td>" for c in row) + "</tr>"
+    head = "".join(f'<th scope="col">{h}</th>' for h in headers)
+    cls = f"results {extra_class}".strip()
+    return _clean(f'<table class="{cls}"><caption>{caption}</caption><tr>{head}</tr>{body}</table>')
+
+def results_html(rows):
+    return table_html(
+        "A false alarm is a normal or ischemia scan that the model flagged as a possible bleed. "
+        "The first three rows show the mean and, in brackets, the lowest and highest of four training runs. "
+        "The last row is the demo model alone, tested on 100 scans it never trained on. "
+        "An always-\"no bleed\" model is 83.6% accurate yet catches no bleeds, so we do not rely on accuracy. "
+        "Same-source scores are an upper bound because the data has no patient IDs.",
+        ["Test", "Bleeds caught", "False alarms", "AUC"], rows, first_row_base=True)
+
+def tuning_html(rows):
+    return table_html(
+        "Demo model, tuned on labelled scans from the first half of the new source and tested on the other 100 scans (3 random draws each).",
+        ["Local scans", "False alarms (new source)", "Bleeds caught (new source)", "AUC (new source)", "Bleeds caught (original data)"],
+        rows, extra_class="tune")
+
+HOW_HTML = """
+<div class="prose">
+<p>BleedCheck CT reads one head CT slice and returns three probabilities: bleeding, ischemia and normal. It shows "Possible bleed" when the bleeding probability is 50% or higher, and "No bleed flagged" otherwise. Ischemia counts as "no bleed", so the model has to tell a bleed from a clot, not only from a healthy brain.</p>
+<p>We fine-tuned a ResNet18 pretrained on ImageNet on the Brain Stroke CT Dataset: 6,650 anonymised slices (4,427 normal, 1,093 bleeding, 1,130 ischemia), split 70/15/15. We tested on 200 scans from a different public source, using half to compare experiments and fine-tune and keeping half for one final test. We trained every recipe with four random seeds, because a single run can mislead. In our first attempt one run flagged 59% of the new source's normal scans and a re-run of the same recipe flagged 16%.</p>
+<p>We picked the recipe with a rule we wrote before looking at the test split or the final half of the new source. Augmentation lowered false alarms on the new source, but it also lowered bleeds caught on the original data and roughly tripled false alarms there, so the rule chose the plain ResNet18.</p>
+</div>
+"""
+
+TUNING_INTRO_HTML = """
+<div class="prose"><p>Our own question: does the tool still work on scans from a different source, and how many local scans does it need to adapt?</p></div>
+"""
+
+TUNING_NOTE_HTML = """
+<div class="prose">
+<p>With about 40 to 100 local scans, false alarms on the new source fell from 16% to about 1 to 2%, and even 10 scans cut them to 4%. This came with costs:</p>
+<ul>
+<li>Bleeds caught on the new source dropped from 100% to about 91 to 96%, so the model missed a few more bleeds as it became less trigger-happy.</li>
+<li>The model got worse on the original data. Bleeds caught there fell from 97.0% to 86.4% at 40 scans and recovered only to 90.9% at 100 scans. At 100 scans, false alarms on the original data also rose from 1.3% to 4.7%.</li>
+</ul>
+<p>The 0-scan row is the single demo model, which happens to be the best of the four runs on the new source, so its starting point looks better than the average in the table above. At 100 local scans the model sees every scan in the local half, so the three draws differ only in training order. This is one demo model, one new source and three draws, so treat it as a lead, not a guarantee. A hospital should test the tool on its own labelled scans before relying on it.</p>
+</div>
+"""
 
 LIMITS_HTML = """
 <aside class="limits"><h3>Read the limits before you trust a result</h3>
-<p>On scans like its training data, the model missed about 1 in 11 bleeds.</p>
-<p>On scans from a different public source, it wrongly flagged 10 to 20% of normal scans. A few labelled scans from the new source brought that down a lot.</p>
-<p>The heatmap shows what drove the score, not where a bleed is. It often lights up the skull edge or the scan background.</p>
-<p>Our data sets are small and public: they have no patient IDs, and the extra source holds only 200 scans. Treat the numbers as a study, not a guarantee.</p></aside>
+<p>On scans like its training data, the model missed about 1 in 13 bleeds. Across four training runs, the miss rate ranged from 2% to 17%, so one unlucky run can be much worse than another.</p>
+<p>On scans from a different public source, it wrongly flagged 16 to 48% of normal scans (27.5% on average) at the 0.5 alert line, and its ranking quality (AUC) dropped from 0.996 to 0.946. Moving the alert line did not fix this reliably: it helped some runs and hurt others. Tuning on 40 to 100 labelled local scans cut false alarms to about 1 to 2%, but the model then caught fewer bleeds and did worse on the original data.</p>
+<p>The heatmap shows what drove the score, not where a bleed is. On missed bleeds it often lit up the back of the head or the head-holder, and on some normal scans the image corners and text overlays. The model may lean on cues that are not the bleed.</p>
+<p>Our data sets are small and public. They have no patient IDs, so slices from one patient can land in both training and test and same-source scores are an upper bound. The new-source test holds only 100 scans from one publisher. Treat the numbers as a study, not a guarantee.</p></aside>
+"""
+
+NEXT_HTML = """
+<div class="prose">
+<ul>
+<li>Use data with patient IDs, so we can split by patient and remove the leakage risk.</li>
+<li>Test scans from more hospitals, and set the alert cut-off on each hospital's own scans.</li>
+<li>Mask the skull and image background so the model cannot lean on them.</li>
+<li>Check performance by bleed size, patient age and sex, once the data allows it.</li>
+<li>Test with clinicians.</li>
+</ul>
+</div>
 """
 
 FOOTER_HTML = f"""
 <div class="footer"><b>This project is a prototype and is not medical advice.</b><br>
-Made by Aarish Asif Khan and Aabir Asif Khan, Islamabad. Code and notebook: <a href="{REPO_URL}">GitHub</a>.<br>
+Made by Aarish Asif Khan and Aabir Asif Khan, Islamabad. Code: <a href="{REPO_URL}">GitHub</a>. Notebook with outputs: <a href="{NOTEBOOK_URL}">Kaggle</a>. Submission video: <a href="{VIDEO_URL}">YouTube</a>.<br>
 We trained on the Brain Stroke CT Dataset, a copy of the TEKNOFEST-2021 stroke data set from the Republic of Türkiye Ministry of Health (Koç et al., Eurasian J Med 2022).
-We tested on Head CT - hemorrhage by Felipe Kitamura (CC0). The example scans come from the CC0 set. We built the app with PyTorch, torchvision and Streamlit.</div>
+We tested on Head CT - hemorrhage by Felipe Kitamura (CC0). The example scans come from the CC0 set. We built the app with PyTorch, torchvision and Streamlit.<br>
+AI tools: Claude (Anthropic) was our main AI assistant. It helped us plan, explained concepts, and wrote and debugged much of the code, which we ran, checked and adjusted ourselves. ChatGPT was used only to brainstorm project names. We ran every experiment and made the decisions. No other AI tools were used.</div>
 """
 
 # ------------------------------------------------------------------ the model
@@ -450,9 +520,22 @@ with right:
 # The scan and heatmap section is filled in at the very end, so the verdict and the rest of the page show first.
 heat_area = st.container()
 
+st.markdown('<div class="section"><h2 class="bc-h2">How it works</h2></div>', unsafe_allow_html=True)
+st.markdown(_clean(HOW_HTML), unsafe_allow_html=True)
+
 st.markdown('<div class="section"><h2 class="bc-h2">How it did in our tests</h2></div>', unsafe_allow_html=True)
 st.markdown(results_html(RESULTS_ROWS), unsafe_allow_html=True)
+
+st.markdown('<div class="section"><h2 class="bc-h2">How many local scans does a new hospital need?</h2></div>', unsafe_allow_html=True)
+st.markdown(_clean(TUNING_INTRO_HTML), unsafe_allow_html=True)
+st.markdown(tuning_html(TUNING_ROWS), unsafe_allow_html=True)
+st.markdown(_clean(TUNING_NOTE_HTML), unsafe_allow_html=True)
+
 st.markdown(_clean(LIMITS_HTML), unsafe_allow_html=True)
+
+st.markdown('<div class="section"><h2 class="bc-h2">What we would do next</h2></div>', unsafe_allow_html=True)
+st.markdown(_clean(NEXT_HTML), unsafe_allow_html=True)
+
 st.markdown(_clean(FOOTER_HTML), unsafe_allow_html=True)
 
 # ------------------------------------------------------------------ last: heatmap (slow) and model warm-up
