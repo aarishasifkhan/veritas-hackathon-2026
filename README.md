@@ -28,13 +28,16 @@ Our project is our own idea, related to the suggested pneumonia X-ray project. W
 - **A harder "no bleed" class.** Ischemia scans count as "no bleed", so the model must tell a bleed from a clot, not only from a healthy brain.
 - **Two kinds of error, reported separately.** We report missed bleeds and false alarms for every test set.
 - **A second data source.** We used 200 scans from a different publisher. We split them in half: 100 to compare experiments and fine-tune, and 100 kept for one final test.
+- **Several training runs, not one.** A single run can mislead: in our first attempt one run flagged 59% of the new source's normal scans and a re-run of the same recipe flagged 16%. So every recipe is trained with four random seeds and we report the mean and the range.
 - **A written log** of every experiment and mistake: `docs/experiment_log.md`.
 
 ## How it works
 
 **Data.** We trained on the Brain Stroke CT Dataset from Kaggle, a copy of the TEKNOFEST-2021 stroke data from the Turkish Ministry of Health. It holds 6,650 anonymised head CT slices (4,427 normal, 1,093 bleeding, 1,130 ischemia). We split it 70/15/15 into 4,655 training, 997 validation and 998 test images. The data has no patient IDs, so slices from one patient can land in both training and test. Our same-source scores may therefore look better than they should. Full details are in [DATA.md](DATA.md).
 
-**Model.** We fine-tuned a ResNet18 pretrained on ImageNet to sort slices into three classes. Class weights help it learn the rarer bleeding and ischemia classes. We keep the epoch with the best validation AUC. We chose this plain ResNet18 by a rule we wrote before looking at the test split or the final Kitamura half. We trained it four times with different random seeds and report the mean and the range.
+**Model.** We fine-tuned a ResNet18 pretrained on ImageNet to sort slices into three classes. Class weights help it learn the rarer bleeding and ischemia classes. We keep the epoch with the best validation bleed AUC.
+
+**How we chose the recipe.** We compared three recipes: plain, plus augmentation (random crops, rotations, brightness changes), and plus augmentation and contrast stretching. We chose by a rule we wrote before looking at the test split or the final Kitamura half: a recipe must stay within 2 points of the plain model's validation bleed recall and within 5 points of its same-source false-alarm rate, and among those we pick the best AUC on the first half of the new source. Both augmentation recipes lowered false alarms on the new source (about 31% down to about 11%) and raised its AUC (0.941 up to about 0.973). But they also lowered bleeds caught on the original data (92.4% down to 87.7%) and roughly tripled false alarms on the dataset's own held-out set (5.4% up to 16.7%), so the rule rejected them and the **plain ResNet18** was chosen. We trained it four times with different random seeds and report the mean and the range.
 
 ## Results
 
@@ -48,36 +51,46 @@ We measure how well the model finds **bleeds** (bleeding vs. everything else).
 
 | Test data | Bleeds caught | False alarms | AUC |
 | --- | --- | --- | --- |
-| Same source (998 slices, 164 bleeds) | 90.9% (88.4–93.3%) | 0.7% (0.2–1.4%) | 0.995 |
-| New source: Kitamura, held-out half (50 bleeds, 50 normal), cut-off 0.5 | 91.5% (86–96%) | 15.5% (10–20%) | 0.948 |
+| Same source (998 slices, 164 bleeds) | 92.1% (82.9–97.6%) | 1.7% (0.6–2.8%) | 0.996 (0.991–0.998) |
+| New source: Kitamura, held-out half (50 bleeds, 50 normal), cut-off 0.5 | 98.5% (96–100%) | 27.5% (16–48%) | 0.946 (0.893–0.985) |
 
 Ranges show the lowest and highest of four training runs. Same-source scores are an upper bound because of the patient-ID limit above.
 
 ## Where it fails
 
-- **It misses about 1 in 11 bleeds,** even on data like its training data (11–19 of 164 across our four runs).
-- **False alarms rise on a new source.** At a 0.5 cut-off, 10–20% of normal scans from the new source got flagged. Changing only the cut-off did not fix it (false alarms ranged from 14% to 48%).
+- **It misses about 1 in 13 bleeds on average,** even on data like its training data. Across our four runs it missed between 4 and 28 of 164 bleeds (2% to 17%), so one unlucky run can be much worse than another.
+- **False alarms rise sharply on a new source.** At a 0.5 cut-off, 16–48% of normal scans from the new source got flagged (27.5% on average), compared with 1.7% on data like the training data. The ranking quality (AUC) also dropped from 0.996 to 0.946.
+- **Moving the cut-off did not fix it.** We moved the cut-off so the model caught at least 95% of bleeds on the first half of the new source. On the held-out half, false alarms averaged 28% (14–44%). It helped some runs and hurt others, so it is not reliable from one run to the next.
 - **The heatmaps do not show the model finding the bleed.** On missed bleeds, the highlighted area sits at the back of the head or on the head-holder. On some normal scans, it sits on image corners and text overlays. The model may lean on cues that are not the bleed.
 - **Our new-source test is small:** 100 scans from one publisher.
-- Demo hosting limits. We first built the demo in Gradio for Hugging Face Spaces, but the paid hosting was out of reach for us, so we moved it to Streamlit Community Cloud. Free hosting can sleep when unused, so the first load may take a minute.
+- **Demo hosting limits.** We first built the demo in Gradio for Hugging Face Spaces, but the paid hosting was out of reach for us, so we moved it to Streamlit Community Cloud. Free hosting can sleep when unused, so the first load may take a minute.
 
 ## Our own question: how many local scans does a new hospital need?
 
-We fine-tuned our demo model (one of the four runs) on 10, 20, 40 or 100 labelled scans from the new source, then tested on the other 100 scans from that source (3 random draws each).
+We fine-tuned our demo model (one of the four runs) on 10, 20, 40 or 100 labelled scans from the first half of the new source, then tested on the other 100 scans from that source, which the model never trained on (3 random draws each). We also checked that the model did not forget the original source.
 
 | Local scans | False alarms (new source) | Bleeds caught (new source) | AUC (new source) | Bleeds caught (original data, validation split) |
 | --- | --- | --- | --- | --- |
-| 0 | 20.0% | 92.0% | 0.937 | 88.4% |
-| 40 | 1.3% | 94.0% | 0.992 | 78.3% |
-| 100 | 1.3% | 95.3% | 0.997 | 86.8% |
+| 0 | 16.0% | 100% | 0.985 | 97.0% |
+| 10 | 4.0% | 90.7% | 0.989 | 88.8% |
+| 20 | 6.0% | 95.3% | 0.988 | 89.0% |
+| 40 | 1.3% | 95.3% | 0.998 | 86.4% |
+| 100 | 2.0% | 96.0% | 0.999 | 90.9% |
 
-With about 100 local scans, false alarms on the new source fell from 20% to about 1%. The same fine-tuning cost recall on the original data: it fell to 78% at 40 scans and recovered to 87% at 100. The 0-scan row is the single demo model, while the results table above averages all four runs, so the numbers differ slightly. Both use the same 100 held-out scans. At 100 local scans the model sees every scan in the local half, so the three draws differ only in training order. This is one new source and three draws, so we treat the result as a lead, not a guarantee. We suggest that a hospital test the tool on its own labelled scans before relying on it.
+With about 40 to 100 local scans, false alarms on the new source fell from 16% to about 1–2%, and even 10 scans cut them to 4%. This came with costs:
+
+- **Bleeds caught on the new source dropped** from 100% to about 91–96%, so the model missed a few more bleeds as it became less trigger-happy.
+- **The model got worse on the original data.** Bleeds caught there fell from 97.0% to 86.4% at 40 scans and recovered only to 90.9% at 100 scans. At 100 scans, false alarms on the original data also rose from 1.3% to 4.7%.
+
+The 0-scan row is the single demo model, while the results table above averages all four runs, so the numbers differ. The demo model was chosen for its validation AUC, and it also happens to be the best of the four on the new source (AUC 0.985, the top of the 0.893–0.985 range), so its starting point looks better than the average. At 100 local scans the model sees every scan in the local half, so the three draws differ only in training order. This is one demo model, one new source and three draws, so we treat the result as a lead, not a guarantee. We suggest that a hospital test the tool on its own labelled scans before relying on it.
 
 ## What we'd do next
 
 - Use data with patient IDs, so we can split by patient and remove the leakage risk.
 - Test scans from more hospitals, and set the alert cut-off on each hospital's own scans.
+- Mask the skull and image background so the model cannot lean on them.
 - Check performance by bleed size, patient age and sex, once the data allows it.
+- Test with clinicians.
 
 ## Sources
 
